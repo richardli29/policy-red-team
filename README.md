@@ -21,6 +21,20 @@ It is deployed with a [bundle](https://docs.databricks.com/aws/en/dev-tools/bund
 | **A model endpoint** | a [Model Serving](https://docs.databricks.com/aws/en/machine-learning/foundation-model-apis/) chat endpoint, called as the app's own service principal. No API key anywhere |
 | **Two secrets** | the `/admin` password and the settings encryption key, generated for you |
 
+## Quick start
+
+Two lines, once you have the CLI and Node 22 (see [Before you start](#before-you-start)):
+
+```bash
+databricks auth login --host https://<your-workspace>.cloud.databricks.com --profile <profile>
+npm run deploy -- <profile>
+```
+
+`npm run deploy` does steps 2 to 5 below in one go and prints the app's URL and
+how to read the admin password. Run the same command again to deploy a code
+change. The first time, finish with [steps 6 to 8](#deploy-it-step-by-step):
+read the password, set a token ceiling in `/admin`, and share the app.
+
 ## Before you start
 
 You need:
@@ -89,7 +103,7 @@ file. Progress shows stage by stage.
 
 ## After a code change
 
-Repeat steps 4 and 5:
+`npm run deploy -- <profile>` again, or steps 4 and 5 by hand:
 
 ```bash
 databricks bundle deploy -t dev -p <profile>
@@ -102,8 +116,7 @@ from its stage, so avoid redeploying during a run that matters.
 
 ## Another workspace
 
-Log in to it with a new profile (step 1) and follow the same steps with that
-profile. To pin a workspace or change a setting for it, add a target to
+Log in to it with a new profile (step 1) and run `npm run deploy -- <new profile>`. To pin a workspace or change a setting for it, add a target to
 `databricks.yml` and use `-t <target>`:
 
 ```yaml
@@ -276,6 +289,7 @@ all.
 
 ```
 npm ci                 install the build tools
+npm run deploy -- <profile> [target]   secrets, build, upload and restart, in one go
 npm run stage:app      build the app into .app/ (bundle deploy runs this for you)
 npm test               unit tests, no database
 npm run test:all       every gate: unit, integration, accessibility, browser walk, offline pack

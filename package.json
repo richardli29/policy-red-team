@@ -16,6 +16,7 @@
     "build:offline": "vite build --config vite.config.offline.ts",
     "claim": "npm run build && node scripts/claim-check.mjs",
     "cli": "node dist/cli.js",
+    "deploy": "sh scripts/deploy.sh",
     "dev": "vite",
     "doctor": "node scripts/doctor.mjs",
     "migrate": "node scripts/migrate.mjs",
