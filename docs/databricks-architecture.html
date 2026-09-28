@@ -1,0 +1,582 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Policy Red Team on Databricks</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700&family=IBM+Plex+Sans:ital,wght@0,400;0,600;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  :root {
+    --ground: #f5f7f6;
+    --panel: #ffffff;
+    --panel-2: #edf1ef;
+    --ink: #17211e;
+    --muted: #56635e;
+    --line: #c7d0cc;
+    --accent: #0e6a64;
+    --accent-soft: #d9ece9;
+    --warn: #a35f00;
+    --warn-soft: #f6e8d3;
+    --font-display: "Archivo", "Helvetica Neue", Arial, sans-serif;
+    --font-body: "IBM Plex Sans", "Segoe UI", Roboto, Arial, sans-serif;
+    --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --ground: #111715;
+      --panel: #18201d;
+      --panel-2: #1f2925;
+      --ink: #e3eae7;
+      --muted: #9aa8a2;
+      --line: #34423d;
+      --accent: #52bdb2;
+      --accent-soft: #19332f;
+      --warn: #e2a24c;
+      --warn-soft: #3a2c16;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --ground: #111715;
+    --panel: #18201d;
+    --panel-2: #1f2925;
+    --ink: #e3eae7;
+    --muted: #9aa8a2;
+    --line: #34423d;
+    --accent: #52bdb2;
+    --accent-soft: #19332f;
+    --warn: #e2a24c;
+    --warn-soft: #3a2c16;
+  }
+
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--font-body);
+    font-size: 16px;
+    line-height: 1.6;
+    padding-inline: 20px;
+    padding-block: 40px 72px;
+  }
+  .page { max-width: 1000px; margin: 0 auto; display: grid; gap: 56px; }
+  section { display: grid; gap: 18px; }
+  h1, h2, h3 { font-family: var(--font-display); text-wrap: balance; margin: 0; line-height: 1.15; }
+  h1 { font-size: clamp(2rem, 5vw, 3rem); font-weight: 700; letter-spacing: -0.01em; }
+  h2 { font-size: 1.6rem; font-weight: 700; }
+  h3 { font-size: 1.1rem; font-weight: 500; }
+  p { margin: 0; max-width: 68ch; }
+  .eyebrow {
+    font-family: var(--font-mono); font-size: 0.78rem; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--accent);
+  }
+  .lede { font-size: 1.15rem; color: var(--muted); max-width: 62ch; }
+  code, .mono { font-family: var(--font-mono); font-size: 0.88em; }
+  code { background: var(--panel-2); padding: 0.05em 0.35em; border-radius: 3px; overflow-wrap: anywhere; }
+  a { color: var(--accent); text-underline-offset: 2px; }
+  a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  header.intro { display: grid; gap: 16px; }
+  .facts {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+    border: 1px solid var(--line); background: var(--panel);
+  }
+  .facts div { padding: 14px 16px; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); display: grid; gap: 2px; min-width: 0; }
+  .facts dt { font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.07em; text-transform: uppercase; color: var(--muted); }
+  .facts dd { margin: 0; font-family: var(--font-mono); font-size: 0.86rem; overflow-wrap: anywhere; }
+
+  figure { margin: 0; display: grid; gap: 10px; }
+  .diagram { overflow-x: auto; background: var(--panel); border: 1px solid var(--line); padding: 12px; }
+  .diagram svg { display: block; width: 100%; min-width: 760px; height: auto; color: var(--ink); }
+  figcaption { font-size: 0.92rem; color: var(--muted); max-width: 75ch; }
+
+  /* SVG vocabulary, drawn from the page tokens so both themes hold. */
+  .b { fill: var(--panel-2); stroke: var(--line); stroke-width: 1.2; }
+  .b-app { fill: none; stroke: var(--accent); stroke-width: 1.6; stroke-dasharray: 0; }
+  .b-key { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.4; }
+  .b-warn { fill: var(--warn-soft); stroke: var(--warn); stroke-width: 1.4; stroke-dasharray: 5 4; }
+  .t { fill: var(--ink); font-family: var(--font-body); font-size: 12.5px; }
+  .t-b { fill: var(--ink); font-family: var(--font-body); font-size: 13px; font-weight: 600; }
+  .t-s { fill: var(--muted); font-family: var(--font-mono); font-size: 11px; }
+  .t-acc { fill: var(--accent); font-family: var(--font-mono); font-size: 11px; }
+  .t-warn { fill: var(--warn); font-family: var(--font-mono); font-size: 11px; }
+  .t-lane { fill: var(--ink); font-family: var(--font-display); font-size: 13px; font-weight: 700; }
+  .ln { stroke: currentColor; stroke-width: 1.3; fill: none; }
+  .ln-acc { stroke: var(--accent); stroke-width: 1.6; fill: none; }
+  .ln-warn { stroke: var(--warn); stroke-width: 1.4; fill: none; stroke-dasharray: 5 4; }
+  .lane { stroke: var(--line); stroke-width: 1; stroke-dasharray: 3 4; }
+  .ah { fill: currentColor; }
+  .ah-acc { fill: var(--accent); }
+  .ah-warn { fill: var(--warn); }
+
+  table { border-collapse: collapse; width: 100%; font-size: 0.93rem; background: var(--panel); }
+  .table-wrap { overflow-x: auto; border: 1px solid var(--line); }
+  th, td { text-align: left; vertical-align: top; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+  th { font-family: var(--font-mono); font-size: 0.74rem; letter-spacing: 0.07em; text-transform: uppercase; color: var(--muted); font-weight: 500; background: var(--panel-2); }
+  tr:last-child td { border-bottom: 0; }
+  td:first-child { font-weight: 600; white-space: nowrap; }
+  .tag { display: inline-block; font-family: var(--font-mono); font-size: 0.72rem; padding: 1px 7px; border-radius: 3px; letter-spacing: 0.03em; }
+  .tag-ok { background: var(--accent-soft); color: var(--accent); }
+  .tag-open { background: var(--warn-soft); color: var(--warn); }
+
+  .stages { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); }
+  .stages div { background: var(--panel); padding: 14px 16px; display: grid; gap: 6px; align-content: start; }
+  .stages h3 { font-size: 0.98rem; }
+  .stages p { font-size: 0.86rem; color: var(--muted); }
+  .stages .n { font-family: var(--font-mono); font-size: 0.74rem; color: var(--accent); }
+
+  .two { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 24px; }
+  .note { border-left: 3px solid var(--warn); background: var(--warn-soft); padding: 12px 16px; display: grid; gap: 6px; }
+  .note p { font-size: 0.93rem; }
+  ol.steps { margin: 0; padding-left: 1.3em; display: grid; gap: 8px; max-width: 75ch; }
+  footer { color: var(--muted); font-size: 0.86rem; border-top: 1px solid var(--line); padding-top: 16px; }
+  .flow { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); }
+  .flow li { background: var(--panel); padding: 16px 18px; display: grid; gap: 6px; align-content: start; }
+  .flow .n { font-family: var(--font-mono); font-size: 0.78rem; color: var(--accent); }
+  .flow h3 { font-size: 1rem; }
+  .flow p { font-size: 0.9rem; color: var(--muted); }
+  .plays td { font-variant-numeric: tabular-nums; }
+  .plays td:nth-child(2) { font-weight: 400; white-space: normal; min-width: 260px; }
+  .plays td:nth-child(n+4) { font-family: var(--font-mono); font-size: 0.86rem; text-align: right; white-space: nowrap; }
+  .plays th:nth-child(n+4) { text-align: right; }
+  .plays td.score { font-weight: 600; color: var(--accent); }
+  .tag-plain { background: var(--panel-2); color: var(--ink); }
+  .tag-grey { background: var(--warn-soft); color: var(--warn); }
+  .small { font-size: 0.92rem; color: var(--muted); max-width: 75ch; }
+  .panel { background: var(--panel); border: 1px solid var(--line); padding: 16px 18px; display: grid; gap: 12px; align-content: start; }
+  .moves { margin: 0; display: grid; gap: 8px; }
+  .moves div { display: grid; grid-template-columns: 7.5em 1fr; gap: 12px; }
+  .moves dt { font-family: var(--font-mono); font-size: 0.8rem; color: var(--accent); padding-top: 0.15em; }
+  .moves dd { margin: 0; font-size: 0.93rem; }
+  ul.plain { margin: 0; padding-left: 1.1em; display: grid; gap: 8px; font-size: 0.93rem; }
+  q { quotes: "\201C" "\201D"; font-style: italic; }
+  @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+</style>
+</head>
+<body>
+
+<div class="page">
+
+  <header class="intro">
+    <span class="eyebrow">Architecture · Databricks Apps</span>
+    <h1>Policy Red Team on Databricks</h1>
+    <p class="lede">A Node and TypeScript service that reads a policy paper the way an adversary would. On Databricks it runs as one App, keeps its assessments in Lakebase Postgres, and calls a Model Serving endpoint as its own service principal. No API keys are stored anywhere.</p>
+    <dl class="facts">
+      <div><dt>Workspace</dt><dd>any, chosen by CLI profile</dd></div>
+      <div><dt>App</dt><dd>policy-red-team · Node 22.16 · port 8000</dd></div>
+      <div><dt>Model endpoint</dt><dd>databricks-claude-sonnet-5</dd></div>
+      <div><dt>Database</dt><dd>Lakebase policy-red-team / production / databricks_postgres</dd></div>
+      <div><dt>Schema</dt><dd>policy_red_team · 15 tables · 13 migrations</dd></div>
+      <div><dt>Deployed by</dt><dd>databricks.yml (bundle)</dd></div>
+    </dl>
+  </header>
+
+  <section id="what">
+    <span class="eyebrow">In plain English</span>
+    <h2>What it does</h2>
+    <p class="lede">You give it a policy paper. It reads the paper the way someone looking for a way round it would, and tells you where the policy is exposed.</p>
+    <p>For each organisation the paper involves, it asks three questions. What does this body want? What does the policy make it pay for, or blame it for? And what could it do to serve itself at the policy's expense, while staying within the rules? The plays that stay within the rules matter most, because nothing in the policy will stop them.</p>
+
+    <ol class="flow" aria-label="How a run goes">
+      <li><span class="n">1</span><h3>Upload a paper</h3><p>A PDF, Word document or text file, with a title. Choose how many model calls run at once.</p></li>
+      <li><span class="n">2</span><h3>It works through 18 stages</h3><p>Reads the paper, works out who is in it, tests it, attacks it, then writes it up and challenges its own conclusions. About an hour for a short paper.</p></li>
+      <li><span class="n">3</span><h3>Read the report</h3><p>In the browser, or downloaded as Word, markdown, or a pack that opens offline.</p></li>
+    </ol>
+
+    <h3>An example, from a real run</h3>
+    <p>The sample paper is six sentences about a local access programme: the Department commissions the Council, the Council is accountable and bears the cost, and <q>Providers supply data to the Council, but no data-sharing payment or enforcement power is specified.</q> From that, the run found 17 plays across the three bodies. Four of them:</p>
+    <div class="table-wrap">
+      <table class="plays">
+        <thead><tr><th>Who</th><th>The play</th><th>Within the rules?</th><th>Incentive</th><th>Ease</th><th>Impact</th><th>Concealment</th><th>Exposure</th></tr></thead>
+        <tbody>
+          <tr><td>Department</td><td>Uses the annual review to say it will fix the funding and authority gap, without ever committing to do so</td><td><span class="tag tag-plain">yes</span></td><td>0.80</td><td>0.85</td><td>0.75</td><td>0.70</td><td class="score">0.77</td></tr>
+          <tr><td>Providers</td><td>Supply data at the lowest quality and timeliness that avoids a visible breakdown, since nothing pays for or enforces better</td><td><span class="tag tag-plain">yes</span></td><td>0.75</td><td>0.85</td><td>0.70</td><td>0.75</td><td class="score">0.76</td></tr>
+          <tr><td>Council</td><td>When short of staff, gets the monthly report in on time first and checks the data behind it second, if at all</td><td><span class="tag tag-plain">yes</span></td><td>0.70</td><td>0.80</td><td>0.65</td><td>0.80</td><td class="score">0.73</td></tr>
+          <tr><td>Providers</td><td>Coordinate a simultaneous slow-down in data supply to force renegotiation</td><td><span class="tag tag-grey">grey area</span></td><td>0.60</td><td>0.35</td><td>0.65</td><td>0.30</td><td class="score">0.45</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="small">The model scores each play on four factors, from 0 to 1. The app ranks them by exposure, the geometric mean of the four, so a play that is weak on any one factor ranks low. The coordinated slow-down would hurt, but it is hard to organise and easy to spot. The three above it are easy, deniable and entirely allowed, which is what makes them the real risk.</p>
+
+    <div class="two">
+      <div class="panel">
+        <h3>What the report answers</h3>
+        <dl class="moves">
+          <div><dt>Verdict</dt><dd>What did it conclude?</dd></div>
+          <div><dt>Causality</dt><dd>Why is any of it possible?</dd></div>
+          <div><dt>Threats</dt><dd>What could be done to the policy?</dd></div>
+          <div><dt>Actors</dt><dd>Who would do it, and why?</dd></div>
+          <div><dt>Provenance</dt><dd>What in the paper each finding rests on, and what the run threw away</dd></div>
+        </dl>
+      </div>
+      <div class="panel">
+        <h3>What it is not</h3>
+        <ul class="plain">
+          <li><strong>Not an assurance review.</strong> It never says a policy is fine. A clean report means it found nothing, which is not the same thing.</li>
+          <li><strong>Not about people.</strong> Every profile is a hypothesis about an organisation's incentives, never a finding about a named person.</li>
+          <li><strong>Not the last word.</strong> Findings rest on the paper alone while web research is off, and the report says so.</li>
+          <li><strong>Not a government service.</strong> It uses the GOV.UK Design System for its forms and documents, without the crown, the royal arms or the GDS typeface.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section id="overview">
+    <span class="eyebrow">The system</span>
+    <h2>What runs where</h2>
+    <p>Everything a reader touches is one process inside one App. The platform puts the workspace sign-in in front of it and hands it credentials at start-up. The process keeps no state on its own disk, because the App's filesystem is wiped on every restart.</p>
+    <figure>
+      <div class="diagram">
+        <svg viewBox="0 0 980 470" role="img" aria-label="A reader's browser reaches the app through the Databricks Apps proxy, which enforces the workspace sign-in. Inside the app one Node process serves the client, runs the worker and calls Model Serving and Lakebase using the app's service principal. Secrets are injected as environment variables at start.">
+          <defs>
+            <marker id="a1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah"/></marker>
+            <marker id="a1acc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah-acc"/></marker>
+          </defs>
+
+          <!-- Reader -->
+          <rect x="20" y="196" width="140" height="68" rx="4" class="b"/>
+          <text x="90" y="224" text-anchor="middle" class="t-b">Reader</text>
+          <text x="90" y="243" text-anchor="middle" class="t-s">browser</text>
+
+          <!-- Apps proxy -->
+          <rect x="210" y="176" width="170" height="108" rx="4" class="b-key"/>
+          <text x="295" y="202" text-anchor="middle" class="t-b">Databricks Apps proxy</text>
+          <text x="295" y="224" text-anchor="middle" class="t-s">workspace sign-in</text>
+          <text x="295" y="241" text-anchor="middle" class="t-s">CAN_USE on the app</text>
+          <text x="295" y="258" text-anchor="middle" class="t-s">120 s per request</text>
+
+          <line x1="160" y1="230" x2="206" y2="230" class="ln" marker-end="url(#a1)"/>
+          <text x="183" y="220" text-anchor="middle" class="t-s">HTTPS</text>
+
+          <!-- App boundary -->
+          <rect x="430" y="28" width="310" height="420" rx="6" class="b-app"/>
+          <text x="446" y="50" class="t-acc">APP · policy-red-team · one Node process</text>
+
+          <rect x="450" y="66" width="270" height="56" rx="4" class="b"/>
+          <text x="466" y="89" class="t-b">Web server</text>
+          <text x="466" y="108" class="t-s">pages · API · live progress</text>
+
+          <rect x="450" y="136" width="270" height="56" rx="4" class="b"/>
+          <text x="466" y="159" class="t-b">Web pages</text>
+          <text x="466" y="178" class="t-s">React · GOV.UK Design System</text>
+
+          <rect x="450" y="206" width="270" height="56" rx="4" class="b"/>
+          <text x="466" y="229" class="t-b">Worker loops</text>
+          <text x="466" y="248" class="t-s">2 documents at once · 4 calls each</text>
+
+          <rect x="450" y="276" width="270" height="56" rx="4" class="b-key"/>
+          <text x="466" y="299" class="t-b">Databricks provider</text>
+          <text x="466" y="318" class="t-s">SP token · per-family rewrites · logs</text>
+
+          <rect x="450" y="346" width="270" height="56" rx="4" class="b"/>
+          <text x="466" y="369" class="t-b">Lakebase pool</text>
+          <text x="466" y="388" class="t-s">@databricks/lakebase · pg</text>
+
+          <line x1="585" y1="262" x2="585" y2="272" class="ln" marker-end="url(#a1)"/>
+          <polyline points="450,240 440,240 440,374 446,374" class="ln" marker-end="url(#a1)"/>
+
+          <!-- proxy to server -->
+          <polyline points="380,230 410,230 410,94 446,94" class="ln" marker-end="url(#a1)"/>
+          <text x="404" y="160" text-anchor="end" class="t-s">forwards</text>
+
+          <!-- Right-hand services -->
+          <rect x="800" y="56" width="160" height="72" rx="4" class="b"/>
+          <text x="880" y="82" text-anchor="middle" class="t-b">Secret scope</text>
+          <text x="880" y="100" text-anchor="middle" class="t-s">admin-password</text>
+          <text x="880" y="115" text-anchor="middle" class="t-s">settings-key</text>
+          <line x1="800" y1="92" x2="744" y2="92" class="ln" marker-end="url(#a1)"/>
+          <text x="772" y="84" text-anchor="middle" class="t-s">env at</text>
+          <text x="772" y="108" text-anchor="middle" class="t-s">start</text>
+
+          <rect x="800" y="186" width="160" height="62" rx="4" class="b"/>
+          <text x="880" y="211" text-anchor="middle" class="t-b">Workspace OAuth</text>
+          <text x="880" y="229" text-anchor="middle" class="t-s">/oidc/v1/token</text>
+          <path d="M720 292 L760 292 L760 217 L796 217" class="ln" marker-end="url(#a1)"/>
+          <text x="766" y="262" class="t-s">SP token,</text>
+          <text x="766" y="276" class="t-s">cached</text>
+
+          <rect x="800" y="276" width="160" height="72" rx="4" class="b-key"/>
+          <text x="880" y="300" text-anchor="middle" class="t-b">Model Serving</text>
+          <text x="880" y="318" text-anchor="middle" class="t-s">AI Gateway</text>
+          <text x="880" y="334" text-anchor="middle" class="t-acc">claude-sonnet-5</text>
+          <line x1="720" y1="316" x2="796" y2="316" class="ln-acc" marker-end="url(#a1acc)"/>
+          <text x="758" y="336" text-anchor="middle" class="t-acc">CAN_QUERY</text>
+
+          <rect x="800" y="366" width="160" height="72" rx="4" class="b"/>
+          <text x="880" y="390" text-anchor="middle" class="t-b">Lakebase</text>
+          <text x="880" y="408" text-anchor="middle" class="t-s">databricks_postgres</text>
+          <text x="880" y="424" text-anchor="middle" class="t-s">schema policy_red_team</text>
+          <line x1="720" y1="382" x2="796" y2="394" class="ln" marker-end="url(#a1)"/>
+          <text x="758" y="378" text-anchor="middle" class="t-s">SQL</text>
+        </svg>
+      </div>
+      <figcaption>Readers connect over HTTPS, and Databricks Apps handles the sign-in, the encryption and the network in front of the app, so none of it needs setting up. The only hop out of the App is to workspace services: the OAuth token endpoint, Model Serving and Lakebase. Each is reached as the App's own service principal, which the bundle grants exactly the permission it needs. Web research is switched off (<code>POLICY_SEARCH=none</code>), so nothing leaves the workspace.</figcaption>
+    </figure>
+  </section>
+
+  <section id="run">
+    <span class="eyebrow">A run</span>
+    <h2>From upload to report</h2>
+    <p>An assessment is a queue of eighteen stages kept in Lakebase. Two worker loops (<code>POLICY_WORKERS</code>) each claim one stage at a time, so two documents can be in progress together. Within a stage, calls run four at a time by default, chosen on the submit form. Because every step is a row in Postgres, a restart loses at most the call in flight, and the stopping instance hands its claims straight back to the queue.</p>
+    <figure>
+      <div class="diagram">
+        <svg viewBox="0 0 980 560" role="img" aria-label="Sequence of a run: the browser uploads a paper, the server stores it and queues stage one in Lakebase, the worker claims each stage with a 60 second lease, calls Model Serving, writes artefacts, and a follower reads the run's state every five seconds and tells the browser over server-sent events.">
+          <defs>
+            <marker id="a2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah"/></marker>
+            <marker id="a2acc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah-acc"/></marker>
+          </defs>
+          <text x="90" y="30" text-anchor="middle" class="t-lane">Browser</text>
+          <text x="290" y="30" text-anchor="middle" class="t-lane">Web server</text>
+          <text x="490" y="30" text-anchor="middle" class="t-lane">Worker</text>
+          <text x="690" y="30" text-anchor="middle" class="t-lane">Lakebase</text>
+          <text x="890" y="30" text-anchor="middle" class="t-lane">Model Serving</text>
+          <line x1="90" y1="42" x2="90" y2="540" class="lane"/>
+          <line x1="290" y1="42" x2="290" y2="540" class="lane"/>
+          <line x1="490" y1="42" x2="490" y2="540" class="lane"/>
+          <line x1="690" y1="42" x2="690" y2="540" class="lane"/>
+          <line x1="890" y1="42" x2="890" y2="540" class="lane"/>
+
+          <line x1="90" y1="72" x2="286" y2="72" class="ln" marker-end="url(#a2)"/>
+          <text x="190" y="64" text-anchor="middle" class="t">upload PDF, DOCX or TXT</text>
+
+          <line x1="290" y1="110" x2="686" y2="110" class="ln" marker-end="url(#a2)"/>
+          <text x="490" y="102" text-anchor="middle" class="t">store paper, create analysis, queue stage 1</text>
+
+          <line x1="290" y1="148" x2="94" y2="148" class="ln" marker-end="url(#a2)"/>
+          <text x="190" y="140" text-anchor="middle" class="t">open event stream</text>
+
+          <line x1="690" y1="190" x2="494" y2="190" class="ln" marker-end="url(#a2)"/>
+          <text x="590" y="182" text-anchor="middle" class="t">claim next stage</text>
+          <text x="590" y="206" text-anchor="middle" class="t-s">SKIP LOCKED · lease 60 s, renewed every 20 s</text>
+
+          <line x1="490" y1="240" x2="886" y2="240" class="ln-acc" marker-end="url(#a2acc)"/>
+          <text x="690" y="232" text-anchor="middle" class="t-acc">chat/completions, 4 at a time, up to 660 s each</text>
+          <line x1="890" y1="272" x2="494" y2="272" class="ln-acc" marker-end="url(#a2acc)"/>
+          <text x="690" y="290" text-anchor="middle" class="t-s">reply normalised: parts joined, JSON unwrapped</text>
+
+          <line x1="490" y1="320" x2="686" y2="320" class="ln" marker-end="url(#a2)"/>
+          <text x="590" y="312" text-anchor="middle" class="t">artefacts, provenance, call audit</text>
+          <text x="590" y="336" text-anchor="middle" class="t-s">then queue the next stage</text>
+
+          <rect x="470" y="352" width="40" height="22" rx="3" class="b"/>
+          <text x="490" y="367" text-anchor="middle" class="t-s">×18</text>
+
+          <line x1="690" y1="410" x2="294" y2="410" class="ln" marker-end="url(#a2)"/>
+          <text x="490" y="402" text-anchor="middle" class="t">run state, read every 5 s while someone watches</text>
+
+          <line x1="290" y1="450" x2="94" y2="450" class="ln" marker-end="url(#a2)"/>
+          <text x="190" y="442" text-anchor="middle" class="t">event: stage</text>
+
+          <line x1="90" y1="490" x2="286" y2="490" class="ln" marker-end="url(#a2)"/>
+          <text x="190" y="482" text-anchor="middle" class="t">fetch report</text>
+
+          <line x1="290" y1="530" x2="94" y2="530" class="ln" marker-end="url(#a2)"/>
+          <text x="190" y="522" text-anchor="middle" class="t">event: done</text>
+        </svg>
+      </div>
+      <figcaption>The browser is told about progress by a follower that reads the run's state from the database. It works whichever loop ran the stage, and it picks a run back up after a restart. Progress events used to come from the loop that executed the stage, which is why a queued second run once showed a false "nothing became claimable" error.</figcaption>
+    </figure>
+
+    <div class="stages" aria-label="The eighteen stages, in five groups">
+      <div><span class="n">Stages 1–4</span><h3>Read the paper</h3><p>Ingestion, decomposition, entity resolution, knowledge graph</p></div>
+      <div><span class="n">Stage 5</span><h3>Who is in it</h3><p>Actor and incentive profiles</p></div>
+      <div><span class="n">Stages 6–9</span><h3>Test it against the world</h3><p>Targeted research, evidence matrix, interaction models, policy tests</p></div>
+      <div><span class="n">Stages 10–12</span><h3>Attack it</h3><p>Adversarial scenarios, exploitation playbook, cross-policy exposure</p></div>
+      <div><span class="n">Stages 13–18</span><h3>Write it up and challenge it</h3><p>Synthesis, persona library, theory of change, options, independent challenge, assured synthesis</p></div>
+    </div>
+  </section>
+
+  <section id="models">
+    <span class="eyebrow">Model calls</span>
+    <h2>How a pipeline request reaches Model Serving</h2>
+    <p>The analysis pipeline was written for an OpenRouter-shaped API and is kept byte-identical to its upstream. Everything Databricks-specific lives in one fork-written provider module that sits underneath it, so the pipeline never learns which service answered.</p>
+    <figure>
+      <div class="diagram">
+        <svg viewBox="0 0 980 250" role="img" aria-label="The pipeline sends an OpenRouter-shaped request. The Databricks provider rewrites it for the endpoint's model family, adds the service principal token and sends it. The reply is normalised back into a plain JSON string before the pipeline sees it.">
+          <defs>
+            <marker id="a3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah"/></marker>
+            <marker id="a3acc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah-acc"/></marker>
+          </defs>
+          <rect x="20" y="70" width="190" height="110" rx="4" class="b"/>
+          <text x="115" y="96" text-anchor="middle" class="t-b">Pipeline (upstream)</text>
+          <text x="115" y="118" text-anchor="middle" class="t-s">reasoning: { effort }</text>
+          <text x="115" y="134" text-anchor="middle" class="t-s">response_format: json_object</text>
+          <text x="115" y="150" text-anchor="middle" class="t-s">max_tokens</text>
+
+          <rect x="290" y="30" width="200" height="80" rx="4" class="b-key"/>
+          <text x="390" y="56" text-anchor="middle" class="t-b">Rewrite request</text>
+          <text x="390" y="76" text-anchor="middle" class="t-s">effort → reasoning_effort (GPT)</text>
+          <text x="390" y="92" text-anchor="middle" class="t-s">Claude: no json_object, 48k out</text>
+
+          <rect x="290" y="140" width="200" height="80" rx="4" class="b-key"/>
+          <text x="390" y="166" text-anchor="middle" class="t-b">Normalise reply</text>
+          <text x="390" y="186" text-anchor="middle" class="t-s">join text parts, drop reasoning</text>
+          <text x="390" y="202" text-anchor="middle" class="t-s">unwrap fenced JSON</text>
+
+          <rect x="570" y="70" width="170" height="110" rx="4" class="b"/>
+          <text x="655" y="96" text-anchor="middle" class="t-b">/serving-endpoints</text>
+          <text x="655" y="118" text-anchor="middle" class="t-s">bearer: SP token</text>
+          <text x="655" y="134" text-anchor="middle" class="t-s">AI Gateway limits</text>
+          <text x="655" y="150" text-anchor="middle" class="t-s">and usage tracking</text>
+
+          <rect x="800" y="70" width="160" height="110" rx="4" class="b"/>
+          <text x="880" y="96" text-anchor="middle" class="t-b">Foundation model</text>
+          <text x="880" y="118" text-anchor="middle" class="t-s">Claude, GPT-5, Gemini,</text>
+          <text x="880" y="134" text-anchor="middle" class="t-s">Llama, Qwen, GLM,</text>
+          <text x="880" y="150" text-anchor="middle" class="t-s">DeepSeek, Kimi</text>
+
+          <polyline points="210,100 250,100 250,70 286,70" class="ln" marker-end="url(#a3)"/>
+          <polyline points="490,70 530,70 530,100 566,100" class="ln-acc" marker-end="url(#a3acc)"/>
+          <line x1="740" y1="125" x2="796" y2="125" class="ln" marker-end="url(#a3)"/>
+          <polyline points="570,150 530,150 530,180 494,180" class="ln-acc" marker-end="url(#a3acc)"/>
+          <polyline points="290,180 250,180 250,150 214,150" class="ln" marker-end="url(#a3)"/>
+          <text x="250" y="200" text-anchor="middle" class="t-s">plain JSON string</text>
+        </svg>
+      </div>
+      <figcaption>Model Serving reports every parameter refusal as <code>400 status code (no body)</code>, so the provider cannot read why a request was refused. It works from a measured list of what each family accepts, and retries once without a field the endpoint may have rejected.</figcaption>
+    </figure>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Family</th><th>JSON mode</th><th>Reasoning setting</th><th>Reply shape</th></tr></thead>
+        <tbody>
+          <tr><td>Claude</td><td>Refuses <code>json_object</code>; answers in a <code>```json</code> fence, which the provider unwraps</td><td>Dropped</td><td>List of parts, with a reasoning part first</td></tr>
+          <tr><td>GPT-5, gpt-oss</td><td>Native</td><td><code>reasoning_effort</code></td><td>String</td></tr>
+          <tr><td>Gemini</td><td>Native</td><td>Dropped</td><td>List of text parts, joined</td></tr>
+          <tr><td>Llama, Qwen, GLM, DeepSeek, Kimi</td><td>Native</td><td>Dropped</td><td>String</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="data">
+    <span class="eyebrow">State</span>
+    <h2>Where each thing is kept</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>What</th><th>Where</th><th>Survives a restart</th></tr></thead>
+        <tbody>
+          <tr><td>Assessments, stages, artefacts, call audit</td><td>Lakebase, schema <code>policy_red_team</code>, created by the migration runner at boot. Upstream's hard-coded <code>"public".</code> references are pointed at this schema as they are applied</td><td><span class="tag tag-ok">yes</span></td></tr>
+          <tr><td>Admin password</td><td>Secret scope <code>policy-red-team</code>, key <code>admin-password</code>, injected as an environment variable</td><td><span class="tag tag-ok">yes</span></td></tr>
+          <tr><td>Key for settings saved in /admin</td><td>Same scope, key <code>settings-key</code>. The encrypted settings are in Lakebase, the key is not</td><td><span class="tag tag-ok">yes</span></td></tr>
+          <tr><td>Model credentials</td><td>None stored. The platform injects the service principal's client ID and secret; the provider exchanges them for a token and refreshes it a minute before it expires</td><td><span class="tag tag-ok">yes</span></td></tr>
+          <tr><td>Keys for sealed runs</td><td>Files on the App's local disk</td><td><span class="tag tag-open">no</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="deploy">
+    <span class="eyebrow">Deployment</span>
+    <h2>How it gets there</h2>
+    <p>The App is built on the deployer's machine and uploaded ready to run. Deploying the repository and letting the platform run <code>npm install</code> failed three times: Databricks' registry mirror refused a different package on each attempt, while serving the same files to a laptop. The staged build removes that step entirely.</p>
+    <figure>
+      <div class="diagram">
+        <svg viewBox="0 0 980 330" role="img" aria-label="On the deployer's machine npm run stage:app builds a single self-contained server bundle into a staging folder. bundle deploy uploads it and creates the Lakebase project and the app's resource grants. bundle run starts a new app deployment, which installs nothing and runs node dist/server.js. The abandoned path, where the platform ran npm install through its registry mirror, is shown dashed.">
+          <defs>
+            <marker id="a4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah"/></marker>
+            <marker id="a4w" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah-warn"/></marker>
+          </defs>
+          <rect x="20" y="40" width="230" height="170" rx="4" class="b"/>
+          <text x="36" y="64" class="t-b">Deployer's machine</text>
+          <text x="36" y="88" class="t-s">npm ci</text>
+          <text x="36" y="106" class="t-s">npm run stage:app  →  .app/</text>
+          <text x="48" y="128" class="t">dist/client</text>
+          <text x="48" y="146" class="t">dist/server.js · 5.6 MB, every dep inlined</text>
+          <text x="48" y="164" class="t">migrations/</text>
+          <text x="48" y="182" class="t">package.json · no dependencies</text>
+
+          <rect x="330" y="40" width="270" height="170" rx="4" class="b-key"/>
+          <text x="346" y="64" class="t-b">databricks bundle deploy</text>
+          <text x="346" y="88" class="t-s">runs stage:app as a prebuild hook</text>
+          <text x="346" y="110" class="t">uploads .app/ to workspace files</text>
+          <text x="346" y="130" class="t">creates the Lakebase project</text>
+          <text x="346" y="150" class="t">grants the app's SP: CAN_QUERY,</text>
+          <text x="346" y="168" class="t">CAN_CONNECT_AND_CREATE, secret READ</text>
+          <text x="346" y="192" class="t-s">starts the app if it is stopped</text>
+
+          <rect x="680" y="40" width="280" height="170" rx="4" class="b"/>
+          <text x="696" y="64" class="t-b">databricks bundle run policy_red_team</text>
+          <text x="696" y="88" class="t-s">new app deployment, about 9 s</text>
+          <text x="696" y="110" class="t">npm install: nothing to fetch</text>
+          <text x="696" y="130" class="t">node dist/server.js</text>
+          <text x="696" y="150" class="t">migrations applied at boot</text>
+          <text x="696" y="170" class="t">worker resumes any run in flight</text>
+
+          <line x1="250" y1="125" x2="326" y2="125" class="ln" marker-end="url(#a4)"/>
+          <line x1="600" y1="125" x2="676" y2="125" class="ln" marker-end="url(#a4)"/>
+
+          <rect x="330" y="248" width="630" height="58" rx="4" class="b-warn"/>
+          <text x="346" y="272" class="t-warn">NOT USED · deploy the repository, let the platform build it</text>
+          <text x="346" y="292" class="t">npm install through npm-proxy.cloud.databricks.com: 404 on xtend, then scheduler</text>
+          <polyline points="135,210 135,277 326,277" class="ln-warn" marker-end="url(#a4w)"/>
+        </svg>
+      </div>
+      <figcaption>One bundle carries the whole deployment. The Lakebase project is marked <code>prevent_destroy</code>, so <code>bundle destroy</code> never takes the assessments with it. The secret scope is created by the bundle's <code>init_secrets</code> script, not declared as a resource: a bundle that manages a scope's permissions replaces them, and on the first attempt that removed the App's own READ access.</figcaption>
+    </figure>
+
+    <div class="two">
+      <div style="display:grid;gap:10px">
+        <h3>First deployment</h3>
+        <ol class="steps">
+          <li><code>npm ci</code></li>
+          <li><code>databricks bundle run init_secrets -t dev</code></li>
+          <li><code>databricks bundle deploy -t dev</code></li>
+          <li><code>databricks bundle run policy_red_team -t dev</code></li>
+          <li>Set a token ceiling in <code>/admin</code>, then grant CAN_USE</li>
+        </ol>
+      </div>
+      <div style="display:grid;gap:10px">
+        <h3>Another workspace</h3>
+        <p>Add a target to <code>databricks.yml</code> with that workspace's host and, if needed, a different <code>serving_endpoint</code>. Nothing else in the repository names a workspace.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="access">
+    <span class="eyebrow">Security</span>
+    <h2>Who can do what</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Principal</th><th>Can</th><th>Granted by</th></tr></thead>
+        <tbody>
+          <tr><td>A signed-in reader with CAN_USE</td><td>Open the App, submit papers, read and export every assessment</td><td>App permissions (only the deployer at first)</td></tr>
+          <tr><td>Holder of the admin password</td><td>Open <code>/admin</code>: token ceiling, model menu, connection test</td><td><code>init_secrets</code> generates it; read with <code>databricks secrets get-secret</code></td></tr>
+          <tr><td>The App's service principal</td><td>Query one serving endpoint, connect to one Lakebase database, read two secrets</td><td>Resource grants in <code>databricks.yml</code>, applied on deploy</td></tr>
+          <tr><td>Another website</td><td>Nothing that changes state: a cross-site guard refuses any POST without <code>Sec-Fetch-Site: same-origin</code></td><td>The server itself</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="limits">
+    <span class="eyebrow">Limits and open items</span>
+    <h2>What to know before relying on it</h2>
+    <div class="two">
+      <div class="note">
+        <h3>Cost</h3>
+        <p>A full run on a one-page sample used 5.6 million tokens, 4.97 million of them input, in about 1 h 45 m. Every call resends the shared context: Claude on Serving accepts cache markers, but a probe read the cache only once in four calls, so caching is an experiment behind <code>POLICY_DATABRICKS_PROMPT_CACHE</code>. Set a token ceiling in <code>/admin</code> and rate limits on the endpoint's AI Gateway before sharing.</p>
+      </div>
+      <div class="note">
+        <h3>Restarts</h3>
+        <p>The platform gives a stopping App 15 seconds, and a stage can take minutes. After 10 seconds the App hands its claimed stages back to the queue, so the next instance picks them up within a second. The call in flight is lost and still billed; the stage resumes.</p>
+      </div>
+      <div class="note">
+        <h3>Sealed runs</h3>
+        <p>Their keys are files on local disk, so an App restart destroys them. Leave sealing off until the keys move to somewhere durable, such as a Unity Catalog volume.</p>
+      </div>
+      <div class="note">
+        <h3>Output limits</h3>
+        <p>Claude writes its reasoning inside the reply, so it spends the same output budget. The first two runs each lost their final stage at exactly the pipeline's 25,000-token cap. Claude now gets 48,000 tokens, and a request that was cut off once gets 64,000 on its next attempt, sized on the measured rate of about 110 tokens a second.</p>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    Built from the deployed configuration on 24 September 2026. Source: <span class="mono">databricks.yml</span>, <span class="mono">app.yaml</span>, <span class="mono">src/lib/llm/providers/databricks.ts</span>, <span class="mono">src/lib/db/index.ts</span>, <span class="mono">scripts/stage-app.mjs</span>.
+  </footer>
+</div>
+</body>
+</html>

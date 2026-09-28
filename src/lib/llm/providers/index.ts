@@ -17,11 +17,12 @@ import type { ProviderDefinition, ProviderId } from './types';
 import { openrouter } from './openrouter';
 import { codex } from './codex';
 import { azure } from './azure';
+import { databricks } from './databricks';
 
 export type { ProviderDefinition, ProviderId, ProviderField, ProviderConfig } from './types';
 
 /** Every provider this build knows how to be. Order is the order the panel lists them. */
-const ALL: ProviderDefinition[] = [openrouter, codex, azure];
+const ALL: ProviderDefinition[] = [openrouter, codex, azure, databricks];
 
 /**
  * WHETHER A CREDENTIAL IN THIS BUILD COULD EVER REACH ANYTHING. True here,

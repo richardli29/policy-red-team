@@ -33,7 +33,8 @@ import { serveStatic } from './static';
 import { sendJson } from './http';
 import { client, DATA_DIR } from '$lib/db';
 import { migrate } from '../scripts/migrate.mjs';
-import { drain, runWorker } from '$lib/worker';
+import { isTerminalStatus, runSignature, runWorker, WORKER_ID } from '$lib/worker';
+import { releaseLeasesHeldBy } from '$lib/workflows/run-queue';
 import { modelAccessProblem } from '$lib/llm/client';
 import { proxyInUse } from '$lib/llm/providers/transport';
 import { keyDir } from '$lib/policy-analysis/server/seal';
@@ -42,7 +43,9 @@ import { refreshModelMenu } from '$lib/server/models/offered-store';
 const ROOT = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
 const CLIENT = path.join(ROOT, 'dist', 'client');
 
-const PORT = Number(process.env.POLICY_PORT ?? 5290);
+// `DATABRICKS_APP_PORT` is the one port Databricks Apps routes to, and it is
+// assigned rather than chosen. `POLICY_PORT` still wins where both are set.
+const PORT = Number(process.env.POLICY_PORT ?? process.env.DATABRICKS_APP_PORT ?? 5290);
 const HOST = process.env.POLICY_HOST ?? '127.0.0.1';
 
 /**
@@ -58,19 +61,55 @@ function publish(analysisId: string, event: string, data: unknown): void {
   for (const send of watchers.get(analysisId) ?? []) send(event, data);
 }
 
-/** Assessments this process is already running, so a resume cannot start a second. */
-const running = new Set<string>();
+/*
+ * WHAT A WATCHING BROWSER IS TOLD COMES FROM THE DATABASE, NOT FROM `drain`.
+ *
+ * `drain` used to publish every event. But `runWorker` claims the same queue in
+ * the same process, so a stage the worker ran told nobody, and `drain` — finding
+ * nothing to claim while the worker did the work, or while the run waited its
+ * turn behind another — gave up after 120 seconds and published THAT as an
+ * error, which the assessment page draws in place of everything else. The run
+ * was fine; the page said it was not, and stopped updating. After a restart
+ * nothing called `drain` at all, so a resumed run was never followed.
+ *
+ * So a follower reads the run's state every few seconds while anyone is
+ * watching, publishes `stage` when it changes and `done` when it ends, and
+ * stops when the last watcher leaves. The server no longer calls `drain` at
+ * all: the worker loops below execute everything. `drain` is the CLI's.
+ */
+const FOLLOW_MS = 5_000;
+const following = new Set<string>();
 
-function startRun(analysisId: string): void {
-  if (running.has(analysisId)) return;
-  running.add(analysisId);
-  void drain(analysisId, {
-    onStage: ({ completed, status }) => publish(analysisId, 'stage', { completed, status }),
-  })
-    .then((status) => publish(analysisId, 'done', { status }))
-    .catch((err: unknown) => publish(analysisId, 'error', { message: err instanceof Error ? err.message : String(err) }))
-    .finally(() => running.delete(analysisId));
+function follow(analysisId: string): void {
+  if (following.has(analysisId)) return;
+  following.add(analysisId);
+  void (async () => {
+    let last: string | null = null;
+    try {
+      while (watchers.get(analysisId)?.size) {
+        const { status, signature } = await runSignature(analysisId).catch(() => ({ status: null, signature: last ?? '' }));
+        if (last !== null && signature !== last && status) publish(analysisId, 'stage', { status });
+        last = signature;
+        if (status && isTerminalStatus(status)) {
+          publish(analysisId, 'done', { status });
+          return;
+        }
+        await new Promise((r) => setTimeout(r, FOLLOW_MS));
+      }
+    } finally {
+      following.delete(analysisId);
+    }
+  })();
 }
+
+/*
+ * NOTHING TO START. A created or resumed run is a `pending` row, and a worker
+ * loop claims it within a second (`createPolicyWorker` polls every 1000 ms).
+ * This used to start `drain()` as a second executor per submission, which is
+ * how two runs came to execute at once by accident — sharing one worker id.
+ * Running several at once is now a setting, `POLICY_WORKERS`, below.
+ */
+function startRun(_analysisId: string): void {}
 
 const server = createServer(async (req, res) => {
   const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
@@ -160,6 +199,7 @@ const server = createServer(async (req, res) => {
       set.add(send);
       watchers.set(id, set);
       send('open', { id });
+      follow(id);
       // A keep-alive comment every twenty seconds: a stream that says nothing for
       // minutes at a time is one that intermediaries close.
       const beat = setInterval(() => res.write(': beat\n\n'), 20_000);
@@ -264,10 +304,18 @@ function engineFloorMet(): boolean {
 
 await migrate(client, { log: () => {} });
 
-// The long-running loop picks up anything left running by a previous process —
-// a stage whose lease lapsed when the server was stopped mid-run.
-const worker = runWorker((message) => console.log(`worker: ${message}`));
-worker.start();
+/*
+ * HOW MANY DOCUMENTS AT ONCE. Each loop runs one stage at a time and a run only
+ * ever has one stage queued, so this is the number of assessments that can be
+ * in progress together. Two by default: enough that a second paper does not
+ * wait behind the first, without doubling the endpoint's load unasked. Each
+ * run's own parallel calls come on top — see `concurrency` on the submit form.
+ *
+ * The loops also pick up anything left running by a previous process.
+ */
+const WORKERS = Math.min(6, Math.max(1, Number(process.env.POLICY_WORKERS) || 2));
+const workers = Array.from({ length: WORKERS }, (_, slot) => runWorker((message) => console.log(`worker ${slot}: ${message}`), slot));
+for (const worker of workers) worker.start();
 
 server.listen(PORT, HOST, async () => {
   console.log(`Policy Red Team on http://${HOST}:${PORT}`);
@@ -289,7 +337,12 @@ server.listen(PORT, HOST, async () => {
     console.warn(`\n  ${problem}`);
     console.warn(`  Existing assessments still open and export; a new one will not start.\n`);
   }
-  if (HOST !== '127.0.0.1' && HOST !== 'localhost') {
+  if (process.env.DATABRICKS_APP_NAME) {
+    // Inside Databricks Apps nothing reaches this port except through the
+    // platform's proxy, which has already required a workspace sign-in and
+    // CAN_USE on the app. The warning below would be false here.
+    console.log(`  bound to ${HOST} behind the Databricks Apps sign-in (${process.env.DATABRICKS_APP_NAME})`);
+  } else if (HOST !== '127.0.0.1' && HOST !== 'localhost') {
     console.warn(
       `\n  WARNING: bound to ${HOST}, not loopback.\n` +
         `  This service has no authentication of any kind. Anyone who can reach\n` +
@@ -298,13 +351,40 @@ server.listen(PORT, HOST, async () => {
   }
 });
 
+/*
+ * HOW LONG A STOP MAY WAIT FOR THE STAGE IN FLIGHT.
+ *
+ * On a server of its own there is no hurry: the systemd unit allows ten minutes,
+ * and finishing a stage beats paying for it twice. Databricks Apps sends SIGKILL
+ * fifteen seconds after SIGTERM, so there the claims are handed back at ten —
+ * the next instance takes them within a second of starting, where it used to
+ * wait out a sixty-second lease. The call in flight is lost either way; the
+ * stage resumes. `POLICY_STOP_GRACE_MS` overrides both.
+ */
+const STOP_GRACE_MS = Number(process.env.POLICY_STOP_GRACE_MS) || (process.env.DATABRICKS_APP_NAME ? 10_000 : Infinity);
+let stopping = false;
+
+async function shutDown(handBack: boolean): Promise<never> {
+  if (handBack) {
+    const released = await releaseLeasesHeldBy(`${WORKER_ID}:`).catch(() => 0);
+    if (released) console.log(`handed ${released} claimed stage(s) back to the queue for the next instance`);
+  }
+  server.close();
+  await client.close().catch(() => {});
+  process.exit(0);
+}
+
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   process.on(signal, () => {
-    console.log('\nstopping; the current stage will finish first');
-    void worker.stop().then(async () => {
-      server.close();
-      await client.close().catch(() => {});
-      process.exit(0);
-    });
+    if (stopping) return;
+    stopping = true;
+    console.log(Number.isFinite(STOP_GRACE_MS)
+      ? `\nstopping; the current stage has ${Math.round(STOP_GRACE_MS / 1000)}s to finish before it is handed back`
+      : '\nstopping; the current stage will finish first');
+    const finished = Promise.all(workers.map((worker) => worker.stop())).then(() => false);
+    const timedOut = Number.isFinite(STOP_GRACE_MS)
+      ? new Promise<boolean>((resolve) => setTimeout(() => resolve(true), STOP_GRACE_MS).unref())
+      : new Promise<boolean>(() => {});
+    void Promise.race([finished, timedOut]).then((handBack) => shutDown(handBack));
   });
 }

@@ -163,6 +163,10 @@ const ENDPOINTS = [
   // list in phase 18 along with `tavily.fixture.ts`, and in that order: adding
   // the name without the redirect fails the build on the next line.
   'api.tavily.com',
+  // Databricks Model Serving: the chat surface and the OAuth token grant. The
+  // workspace host is the reader's own, so the paths are what can be grepped.
+  '/serving-endpoints',
+  '/oidc/v1/token',
 ];
 for (const [name, source] of [['cli-fixture.js', fixture], ['server-fixture.js', fixtureServer]]) {
   const found = ENDPOINTS.filter((endpoint) => source.includes(endpoint));

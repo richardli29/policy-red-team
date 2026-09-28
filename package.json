@@ -22,6 +22,7 @@
     "offline": "npm run build:offline && node build.mjs && node scripts/offline-check.mjs",
     "pack:live": "npm run build:offline && node scripts/pack-live.mjs",
     "serve": "node dist/server.js",
+    "stage:app": "node scripts/stage-app.mjs",
     "spike": "node spike/pglite.mjs && node spike/drizzle.mjs && node spike/govuk/build.mjs",
     "start": "npm run build && node dist/server.js",
     "sync": "node scripts/sync-core.mjs",
@@ -33,6 +34,7 @@
     "walk": "npm run build && node scripts/walk.mjs"
   },
   "dependencies": {
+    "@databricks/lakebase": "^0.6.0",
     "@electric-sql/pglite": "^0.5.8",
     "archiver": "^5.3.2",
     "busboy": "^1.6.0",
@@ -43,6 +45,7 @@
     "marked": "^17.0.6",
     "openai": "^6.32.0",
     "pdfjs-dist": "^5.4.296",
+    "pg": "^8.23.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-router": "^7.9.1",
@@ -54,6 +57,7 @@
     "@types/busboy": "^1.5.4",
     "@types/node": "^26.6.1",
     "@types/pdfkit": "0.17.6",
+    "@types/pg": "^8.23.1",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.1",

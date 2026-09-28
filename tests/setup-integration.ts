@@ -22,6 +22,9 @@ const root = mkdtempSync(path.join(tmpdir(), 'policy-test-'));
 process.env.POLICY_DATA_DIR = path.join(root, 'db');
 process.env.POLICY_SEAL_KEY_DIR = path.join(root, 'keys');
 process.env.POLICY_LOCAL_TESTS = '1';
+// The other half of the guard: `POLICY_DATABASE=lakebase` in the shell would
+// route every purge past the directory above and into a real database.
+delete process.env.POLICY_DATABASE;
 
 // Imported AFTER the environment is set: `src/lib/db` reads POLICY_DATA_DIR at
 // module load and opens the database there, so importing it any earlier would

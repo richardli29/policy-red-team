@@ -61,7 +61,10 @@ import { EnvHttpProxyAgent, fetch as undiciFetch, setGlobalDispatcher } from 'un
  * before any of our code runs. `scripts/doctor.mjs` reports whether it is set,
  * and the README says to set it.
  */
-const LONG_CALL_MS = 600_000;
+// 720 s since 2026-09-24: Databricks gives a Claude request that was once cut
+// off 64,000 tokens, about 580 s of writing, and its deadline is 660 s. The
+// wire must outlast the deadline or it decides first and reads as an outage.
+const LONG_CALL_MS = 720_000;
 
 /**
  * One agent, module-scoped, because an Agent owns a connection pool. Building

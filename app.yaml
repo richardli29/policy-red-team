@@ -1,0 +1,69 @@
+# Policy Red Team as a Databricks App.
+#
+# The runtime configuration. `databricks.yml` beside it declares the resources
+# the `valueFrom` entries name, and grants the app's service principal access to
+# each one on deploy.
+#
+# BUILD, THEN SERVE. The source is uploaded without `dist/` (it is gitignored),
+# so the first start builds the client, the offline pack and the server bundle.
+# If the platform has already run `npm run build`, the check skips it.
+command:
+  - sh
+  - -c
+  - test -f dist/server.js || npm run build; exec node dist/server.js
+
+env:
+  # Apps routes to DATABRICKS_APP_PORT only, on every interface. The server
+  # reads that port itself; the host has to be said.
+  - name: POLICY_HOST
+    value: 0.0.0.0
+
+  # ── Storage: Lakebase, because the app's disk does not survive a restart ───
+  - name: POLICY_DATABASE
+    value: lakebase
+  - name: LAKEBASE_ENDPOINT
+    valueFrom: postgres
+  - name: POLICY_PG_SCHEMA
+    value: policy_red_team
+
+  # ── Models: Databricks Model Serving, as the app's own service principal ───
+  # DATABRICKS_HOST, DATABRICKS_CLIENT_ID and DATABRICKS_CLIENT_SECRET are
+  # injected by the platform. The endpoint name comes from the resource.
+  - name: POLICY_PROVIDERS
+    value: databricks
+  - name: POLICY_PROVIDER
+    value: databricks
+  - name: POLICY_DATABRICKS_ENDPOINT
+    valueFrom: serving-endpoint
+
+  # ── Who can get in ───────────────────────────────────────────────────────
+  # The workspace sign-in in front of every Databricks App is the gate, and
+  # CAN_USE on the app decides who passes it. `/admin` keeps its own password.
+  - name: POLICY_ACCESS
+    value: open
+  - name: POLICY_ADMIN_PASSWORD
+    valueFrom: admin-password
+  - name: POLICY_SETTINGS_KEY
+    valueFrom: settings-key
+  - name: POLICY_OWNER_EMAIL
+    value: policy-red-team@app.local
+
+  # ── Research ──────────────────────────────────────────────────────────────
+  # `none` until outbound access to a search service is agreed. The report then
+  # says every finding rests on the paper, which is true.
+  - name: POLICY_SEARCH
+    value: none
+  - name: POLICY_PRODUCER
+    value: Policy Red Team
+
+  # ── How much runs at once ────────────────────────────────────────────────
+  # Documents in progress together. Each also makes parallel calls inside a
+  # stage (chosen on the submit form, four by default), so the endpoint sees up
+  # to WORKERS × that at once. Note the store's own limit: three active
+  # assessments per owner, and on this app every reader is one owner.
+  - name: POLICY_WORKERS
+    value: "2"
+  # Prompt caching for Claude, as an experiment: 1 to try it. Off until a run
+  # shows it saves more than the cache writes cost.
+  - name: POLICY_DATABRICKS_PROMPT_CACHE
+    value: "0"

@@ -208,6 +208,23 @@ export function New() {
             />
           ) : null}
 
+          {/*
+            PARALLEL CALLS WERE NEVER ASKED FOR, so every run was serial. The
+            pipeline has taken `concurrency` since upstream added it; this form
+            did not send it, `ingest.ts` read the absence as null and the run
+            fell to `DEFAULT_CONCURRENCY`, one call at a time. On 2026-09-24 the
+            fan-out stages were about 3,600 of a 6,000-second run for exactly
+            that reason. Four is what upstream measured as the point past which
+            more agents stop helping; the tokens spent are the same at any
+            setting.
+          */}
+          <Select
+            id="concurrency" label="Parallel model calls" labelSize="s"
+            hint="How many calls a stage makes at once. More finishes sooner and costs the same, but puts more load on the model endpoint at one time."
+            defaultValue="4"
+            options={[1, 2, 3, 4, 5, 6].map((n) => ({ value: String(n), text: n === 1 ? '1 (one at a time)' : n === 4 ? '4 (recommended)' : String(n) }))}
+          />
+
           <div className="govuk-form-group">
             <fieldset className="govuk-fieldset">
               <legend className="govuk-fieldset__legend govuk-fieldset__legend--s">Sealing</legend>

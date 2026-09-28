@@ -71,6 +71,17 @@ const ENV_NAMES: Record<string, Record<string, string>> = {
     federatedTokenFile: 'AZURE_FEDERATED_TOKEN_FILE',
     authorityHost: 'AZURE_AUTHORITY_HOST',
   },
+  // `DATABRICKS_HOST`, `DATABRICKS_CLIENT_ID` and `DATABRICKS_CLIENT_SECRET` are
+  // what Databricks Apps injects for the app's own service principal, so an app
+  // needs only the endpoint name set. `DATABRICKS_TOKEN` is the CLI's own name.
+  databricks: {
+    host: 'DATABRICKS_HOST',
+    model: 'POLICY_DATABRICKS_ENDPOINT',
+    authMode: 'POLICY_DATABRICKS_AUTH',
+    clientId: 'DATABRICKS_CLIENT_ID',
+    clientSecret: 'DATABRICKS_CLIENT_SECRET',
+    token: 'DATABRICKS_TOKEN',
+  },
 };
 
 let cached: { key: string; client: OpenAI } | undefined;

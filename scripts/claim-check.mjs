@@ -45,6 +45,8 @@ async function startServer(env) {
     env: {
       ...process.env,
       POLICY_PORT: String(PORT),
+      // Never Lakebase, whatever the shell says.
+      POLICY_DATABASE: '',
       POLICY_DATA_DIR: path.join(dataRoot, 'db'),
       POLICY_SEAL_KEY_DIR: path.join(dataRoot, 'keys'),
       // Whatever the case is about. Deleted rather than inherited, so a variable

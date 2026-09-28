@@ -30,3 +30,6 @@ static/policy-offline/
 # temp directory, because `playwright` and `jszip` only resolve from inside the
 # project — and one of them was committed in phase 11 before this rule existed.
 /.*.mjs
+
+# Staged by `npm run stage:app` for a Databricks App deploy.
+/.app/

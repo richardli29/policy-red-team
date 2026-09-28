@@ -140,6 +140,23 @@ const ALL: ProviderDefinition[] = [
     { name: 'authorityHost', label: 'Entra authority', hint: 'Blank unless this is a sovereign cloud.', optional: true, showWhen: { field: 'authMode', is: ['entra-app', 'workload-identity'] } },
     { name: 'apiVersion', label: 'API version', hint: 'Leave blank for the default.', optional: true },
   ]),
+  stub('databricks', 'Databricks Model Serving', 'A model served in your Databricks workspace.', ['your Databricks workspace host (model serving, and its OAuth token endpoint)'], [
+    { name: 'host', label: 'Workspace URL', hint: 'The address of the workspace.' },
+    { name: 'model', label: 'Serving endpoint', hint: 'The endpoint name.' },
+    {
+      name: 'authMode',
+      label: 'How to authenticate',
+      hint: 'A deployment uses its service principal.',
+      kind: 'select',
+      options: [
+        { value: 'service-principal', text: 'Service principal (OAuth) — what Databricks Apps provides' },
+        { value: 'token', text: 'Personal access token' },
+      ],
+    },
+    { name: 'clientId', label: 'Client ID', hint: 'The service principal’s application ID.', showWhen: { field: 'authMode', is: ['service-principal'] } },
+    { name: 'clientSecret', label: 'Client secret', hint: 'An OAuth secret for that service principal.', secret: true, showWhen: { field: 'authMode', is: ['service-principal'] } },
+    { name: 'token', label: 'Access token', hint: 'A personal access token.', secret: true, showWhen: { field: 'authMode', is: ['token'] } },
+  ]),
 ];
 
 /**

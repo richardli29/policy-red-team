@@ -48,6 +48,21 @@ export function wrapsItself(sql) {
   return /^\s*BEGIN\s*;/im.test(sql);
 }
 
+/**
+ * A migration's SQL, pointed at the schema the database handle names.
+ *
+ * Upstream's migrations name `"public"."policy_analyses"` in their foreign keys,
+ * and they are copied files. On Lakebase this service lives in its own schema
+ * (see `src/lib/db`), where `public` holds nothing of ours and the reference
+ * would fail. Only the quoted, qualified form is rewritten — the one drizzle
+ * generates — and only when a schema is named, so PGlite applies the files
+ * byte for byte as before.
+ */
+export function inSchema(sql, schema) {
+  if (!schema || schema === 'public') return sql;
+  return sql.replaceAll('"public".', `"${schema}".`);
+}
+
 export async function migrate(db, { log = console.log } = {}) {
   await db.exec(`CREATE TABLE IF NOT EXISTS "_migrations" (
     "name" text PRIMARY KEY NOT NULL,
@@ -59,7 +74,7 @@ export async function migrate(db, { log = console.log } = {}) {
   const applied = [];
   for (const name of await plannedOrder()) {
     if (done.has(name)) { log(`  skip    ${name} (already applied)`); continue; }
-    const sql = await readFile(path.join(MIGRATIONS, name), 'utf8');
+    const sql = inSchema(await readFile(path.join(MIGRATIONS, name), 'utf8'), db.schema);
     const body = wrapsItself(sql) ? sql : `BEGIN;\n${sql}\nCOMMIT;`;
     try {
       await db.exec(body);

@@ -17,9 +17,10 @@
  *   interrupted envelope for recovery, and draining the current stage on stop;
  *   there was no reason to write a second one.
  */
+import { randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { db } from '$lib/db';
-import { policyAnalyses } from '$lib/db/schema';
+import { policyAnalyses, policyStages } from '$lib/db/schema';
 import { claimNext, clearLease, releaseExpiredLeases, renewLease } from '$lib/workflows/run-queue';
 import { executePolicyRun } from '$lib/policy-analysis/server/worker';
 import { TRIGGER } from '$lib/policy-analysis/contracts';
@@ -45,7 +46,13 @@ export function isFinished(status: string): boolean {
   return (FINISHED as readonly string[]).includes(status);
 }
 
-export const WORKER_ID = `local:${process.pid}`;
+/*
+ * UNIQUE PER PROCESS, not just per pid. In a container the pid is often the same
+ * on every instance, and during a redeploy the old instance and the new one
+ * overlap: the old one handing back "its" claims by pid would hand back the new
+ * one's too. A random part makes the prefix this process's alone.
+ */
+export const WORKER_ID = `local:${process.pid}:${randomUUID().slice(0, 8)}`;
 
 /**
  * How long a claim is good for, and therefore how often it must be renewed.
@@ -62,6 +69,45 @@ export async function analysisStatus(analysisId: string): Promise<string | null>
     .from(policyAnalyses)
     .where(eq(policyAnalyses.id, analysisId));
   return row?.status ?? null;
+}
+
+/**
+ * `drain` stopped waiting, while the assessment itself is still going.
+ *
+ * Its own class because it is not a failure of the run, and a caller that shows
+ * errors to a reader has to be able to tell. In the server a second executor —
+ * `runWorker` — claims the same queue, so `drain` can find nothing to claim for
+ * minutes on end while every stage is being done: behind another assessment
+ * (`queued`), or because the stage in flight is the worker's (`running`). On
+ * 2026-09-24 that was shown to a reader as the whole of their assessment page.
+ */
+export class DrainIdle extends Error {
+  constructor(readonly analysisId: string, readonly status: string, idleTimeoutMs: number) {
+    super(`Nothing became claimable for ${Math.round(idleTimeoutMs / 1000)}s while ${analysisId} was still "${status}".`);
+    this.name = 'DrainIdle';
+  }
+}
+
+/**
+ * Where an assessment is, in one comparable value: its status and every stage's.
+ * It changes exactly when something a reader watching the run would see changes,
+ * whichever loop did the work.
+ */
+export async function runSignature(analysisId: string): Promise<{ status: string | null; signature: string }> {
+  const status = await analysisStatus(analysisId);
+  const stages = await db
+    .select({ ordinal: policyStages.ordinal, status: policyStages.status })
+    .from(policyStages)
+    .where(eq(policyStages.analysisId, analysisId));
+  const signature = stages
+    .sort((a, b) => a.ordinal - b.ordinal)
+    .map((stage) => stage.status)
+    .join(',');
+  return { status, signature: `${status}|${signature}` };
+}
+
+export function isTerminalStatus(status: string): boolean {
+  return TERMINAL.has(status);
 }
 
 export interface DrainOptions {
@@ -95,9 +141,7 @@ export async function drain(analysisId: string, options: DrainOptions = {}): Pro
     const claimed = await claimNext(WORKER_ID, LEASE_MS, TRIGGER);
     if (!claimed) {
       if (Date.now() - idleSince > idleTimeoutMs) {
-        throw new Error(
-          `Nothing became claimable for ${Math.round(idleTimeoutMs / 1000)}s while ${analysisId} was still "${status}".`
-        );
+        throw new DrainIdle(analysisId, status, idleTimeoutMs);
       }
       await new Promise((r) => setTimeout(r, pollMs));
       continue;
@@ -136,13 +180,22 @@ export async function drain(analysisId: string, options: DrainOptions = {}): Pro
   }
 }
 
-/** The long-running loop, for phase 4's server. */
-export function runWorker(log: (message: string) => void = () => {}) {
+/**
+ * The long-running loop, for phase 4's server. One per SLOT.
+ *
+ * Each loop claims one stage at a time, and an assessment only ever has one
+ * stage queued, so N loops is up to N documents in progress at once — each
+ * with its own parallel calls inside a stage. Every loop has its own id: they
+ * used to share `WORKER_ID`, which is how a second executor could renew or
+ * clear a claim that was not its own.
+ */
+export function runWorker(log: (message: string) => void = () => {}, slot = 0) {
+  const id = `${WORKER_ID}:${slot}`;
   return createPolicyWorker({
-    claim: () => claimNext(WORKER_ID, LEASE_MS, TRIGGER),
-    execute: (run: PolicyQueueRun) => executePolicyRun(run, WORKER_ID),
-    renew: (run: PolicyQueueRun) => renewLease(run.id, WORKER_ID),
-    clear: (run: PolicyQueueRun) => clearLease(run.id, WORKER_ID),
+    claim: () => claimNext(id, LEASE_MS, TRIGGER),
+    execute: (run: PolicyQueueRun) => executePolicyRun(run, id),
+    renew: (run: PolicyQueueRun) => renewLease(run.id, id),
+    clear: (run: PolicyQueueRun) => clearLease(run.id, id),
     recover: async () => { await releaseExpiredLeases(TRIGGER); },
     sweep: () => releaseExpiredLeases(TRIGGER),
     log,

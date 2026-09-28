@@ -34,6 +34,8 @@ const server = spawn(process.execPath, [path.join(ROOT, 'dist', 'server-fixture.
   env: {
     ...process.env,
     POLICY_PORT: String(PORT),
+    // Never Lakebase, whatever the shell says: this walk purges.
+    POLICY_DATABASE: '',
     POLICY_DATA_DIR: path.join(dataRoot, 'db'),
     POLICY_SEAL_KEY_DIR: path.join(dataRoot, 'keys'),
     // The panel is CLOSED without one, which is itself a thing worth testing —

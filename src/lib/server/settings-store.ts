@@ -43,6 +43,19 @@ let cachedKey: Buffer | undefined;
  */
 async function settingsKey(): Promise<Buffer> {
   if (cachedKey) return cachedKey;
+  /*
+   * FROM THE ENVIRONMENT, WHERE THE DISK DOES NOT LAST. Databricks Apps wipes
+   * the filesystem on every restart, so a minted file would be a new key each
+   * boot and every stored credential would read as unset. A deployment there
+   * hands this in from a secret scope — still outside the database, which is
+   * the property that matters.
+   */
+  const pinned = process.env.POLICY_SETTINGS_KEY?.trim();
+  if (pinned) {
+    if (!/^[0-9a-f]{64}$/i.test(pinned)) throw new Error('POLICY_SETTINGS_KEY must be 64 hex characters (32 bytes).');
+    cachedKey = Buffer.from(pinned, 'hex');
+    return cachedKey;
+  }
   const file = settingsKeyPath();
   const existing = await readFile(file, 'utf8').catch(() => null);
   if (existing && /^[0-9a-f]{64}$/i.test(existing.trim())) {

@@ -21,7 +21,7 @@
  */
 import type OpenAI from 'openai';
 
-export type ProviderId = 'openrouter' | 'codex' | 'azure';
+export type ProviderId = 'openrouter' | 'codex' | 'azure' | 'databricks';
 
 /** One thing a reader has to supply. `secret` never comes back out of the server. */
 export type ProviderField = {

@@ -1,5 +1,5 @@
 /**
- * The run queue, for one worker in one process.
+ * The run queue, for the worker loops in one process.
  *
  * Upstream this coordinates a FLEET: `SELECT … FOR UPDATE SKIP LOCKED` so several
  * workers can poll the same table without ever being handed the same row, leases
@@ -20,8 +20,14 @@
  *   `startedAt: now + delayMs`, and a claim that ignored it would run every stage
  *   immediately and defeat the pacing.
  *
- * What is DROPPED: `SKIP LOCKED` (nothing to skip past on a single connection)
- * and the worker-ownership carve-out (there is one owner).
+ *   `SKIP LOCKED`, which was dropped as "nothing to skip past on a single
+ *   connection" and is back since 2026-09-24. On Lakebase there is a real pool,
+ *   and the server runs several worker loops so that more than one document can
+ *   be assessed at once. Without it two loops claiming at the same moment
+ *   queue on the same row, and the one that waits gets nothing — even with
+ *   another stage ready behind it. PGlite accepts it and has nothing to skip.
+ *
+ * What is DROPPED: the worker-ownership carve-out (there is one owner).
  */
 import { sql } from 'drizzle-orm';
 import { db } from '$lib/db';
@@ -70,7 +76,7 @@ export async function claimNext(
         AND (claimed_by IS NULL OR lease_expires_at IS NULL OR lease_expires_at <= now())
       ORDER BY started_at ASC NULLS FIRST
       LIMIT 1
-      FOR UPDATE
+      FOR UPDATE SKIP LOCKED
     )
     UPDATE workflow_runs r
     SET status = 'running',
@@ -133,6 +139,25 @@ export async function releaseExpiredLeases(triggerFilter?: string): Promise<numb
       AND claimed_by IS NOT NULL
       AND lease_expires_at IS NOT NULL
       AND lease_expires_at <= now()
+  `);
+  return countOf(res);
+}
+
+/**
+ * Hand back every run this process holds, now, on the way out.
+ *
+ * Databricks Apps gives a stopping process fifteen seconds and a stage can
+ * take minutes, so a restart used to leave its claims to lapse: the next
+ * instance waited out the lease before anything moved, and the call in flight
+ * showed as failed with no reason. Returning them as `pending` lets the next
+ * instance claim them within a second of starting. `claimed_by` is matched on
+ * the process's own prefix, so another process's claims are never touched.
+ */
+export async function releaseLeasesHeldBy(workerPrefix: string): Promise<number> {
+  const res = await db.execute(sql`
+    UPDATE workflow_runs
+    SET status = 'pending', claimed_by = NULL, claimed_at = NULL, lease_expires_at = NULL
+    WHERE status = 'running' AND claimed_by LIKE ${`${workerPrefix}%`}
   `);
   return countOf(res);
 }

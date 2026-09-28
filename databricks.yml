@@ -1,0 +1,136 @@
+# Policy Red Team as a Declarative Automation Bundle: the app, its Lakebase
+# database and its secret scope, deployed together.
+#
+#   npm ci                                                  once, for the build tools
+#   databricks bundle run init_secrets -t dev -p <profile>  once, before the first deploy
+#   databricks bundle deploy -t dev -p <profile>            build, upload, create, start
+#   databricks bundle run policy_red_team -t dev -p <profile>   push the new code live
+#
+# The `dev` target names no workspace: it is whichever one `<profile>` points
+# at. That keeps any one workspace's address out of the repository.
+#
+# `bundle deploy` runs `npm run stage:app` first (see `experimental.scripts`),
+# uploads `.app/`, creates or updates the Lakebase project and the app, and
+# starts the app if it is stopped. It does NOT roll a running app onto new
+# code — that is what the `run` is for, every time the code changes.
+#
+# `init_secrets` creates the secret scope if it is missing and fills it with a
+# generated admin password and settings key, leaving anything already there
+# alone. Read the password back with
+# `databricks secrets get-secret <scope> admin-password`.
+#
+# THE SCOPE IS NOT A BUNDLE RESOURCE, on purpose. A bundle that manages a
+# scope's permissions REPLACES them, and on 2026-09-24 that removed the READ
+# the app's own resource declaration below had granted — the next restart
+# would have come up without its secrets — and the app's principal cannot be
+# named there instead, because the reference does not resolve. The app's
+# `secret` resources grant it what it needs; nothing else should touch that.
+#
+# ANOTHER WORKSPACE needs nothing but another profile. Add a target only to pin
+# a host or override a variable below for it.
+bundle:
+  name: policy-red-team
+
+variables:
+  app_name:
+    description: The app's name; lower case, hyphens, 26 characters at most
+    default: policy-red-team
+  serving_endpoint:
+    description: The chat endpoint every model call goes to
+    default: databricks-claude-sonnet-5
+  lakebase_project:
+    description: Lakebase Autoscaling project ID, created if it does not exist
+    default: policy-red-team
+  secret_scope:
+    description: Secret scope holding admin-password and settings-key
+    default: policy-red-team
+
+experimental:
+  scripts:
+    # Build here, install nothing there. See `scripts/stage-app.mjs` for why.
+    prebuild: npm run stage:app
+
+scripts:
+  init_secrets:
+    content: sh scripts/init-secrets.sh
+    env:
+      SECRET_SCOPE: ${var.secret_scope}
+
+sync:
+  # `.app/` is gitignored (it is built), and a bundle skips gitignored files
+  # unless told otherwise.
+  include:
+    - .app/**
+  exclude:
+    - tests/**
+    - spike/**
+    - docs/**
+    - deploy/**
+    - .isaac/**
+    - .github/**
+
+resources:
+  # THE DATABASE OUTLIVES THE APP. `prevent_destroy` means `bundle destroy`
+  # refuses rather than taking every assessment with it; delete the project by
+  # hand if that is really what is wanted.
+  postgres_projects:
+    lakebase:
+      project_id: ${var.lakebase_project}
+      display_name: ${var.lakebase_project}
+      pg_version: 16
+      default_endpoint_settings:
+        autoscaling_limit_min_cu: 0.5
+        autoscaling_limit_max_cu: 2
+      lifecycle:
+        prevent_destroy: true
+
+  apps:
+    policy_red_team:
+      name: ${var.app_name}
+      description: Adversarial policy analysis — who gains if a policy fails, and how.
+      # Staged by the prebuild script above: built here, installed there.
+      source_code_path: ./.app
+      lifecycle:
+        started: true
+      resources:
+        - name: serving-endpoint
+          serving_endpoint:
+            name: ${var.serving_endpoint}
+            permission: CAN_QUERY
+        # A new project comes with a `production` branch and a
+        # `databricks-postgres` database; the reference to the project resource
+        # is what makes the bundle create it before the app.
+        - name: postgres
+          postgres:
+            branch: ${resources.postgres_projects.lakebase.name}/branches/production
+            database: ${resources.postgres_projects.lakebase.name}/branches/production/databases/databricks-postgres
+            permission: CAN_CONNECT_AND_CREATE
+        - name: admin-password
+          secret:
+            scope: ${var.secret_scope}
+            key: admin-password
+            permission: READ
+        - name: settings-key
+          secret:
+            scope: ${var.secret_scope}
+            key: settings-key
+            permission: READ
+      # Who may open it. The deployer always can; add a group to share it.
+      # permissions:
+      #   - group_name: policy-red-team-users
+      #     level: CAN_USE
+
+targets:
+  # No `mode: development`: it prefixes the app name with the deployer's, and
+  # an app name has a 30-character ceiling.
+  dev:
+    default: true
+
+  # Pinning a workspace. Uncomment, set the host, deploy with -t prod.
+  # prod:
+  #   mode: production
+  #   workspace:
+  #     host: https://<workspace>.cloud.databricks.com
+  #     root_path: /Workspace/Shared/.bundle/${bundle.name}/${bundle.target}
+  #   variables:
+  #     serving_endpoint: databricks-claude-sonnet-5

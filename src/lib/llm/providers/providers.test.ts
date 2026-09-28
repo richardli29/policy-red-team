@@ -126,7 +126,7 @@ describe('what a provider offers', () => {
 describe('what a build offers', () => {
   it('is everything by default', () => {
     delete process.env.POLICY_PROVIDERS;
-    expect(providers().map((p) => p.id)).toEqual(['openrouter', 'codex', 'azure']);
+    expect(providers().map((p) => p.id)).toEqual(['openrouter', 'codex', 'azure', 'databricks']);
   });
 
   it('narrows to a named list, which is how the Codex bridge leaves a shipped build', () => {
@@ -144,7 +144,7 @@ describe('what a build offers', () => {
     // A typo in a deployment variable must not leave a service that cannot
     // reach a model at all.
     process.env.POLICY_PROVIDERS = 'bedrock,vertex';
-    expect(providers().map((p) => p.id)).toEqual(['openrouter', 'codex', 'azure']);
+    expect(providers().map((p) => p.id)).toEqual(['openrouter', 'codex', 'azure', 'databricks']);
   });
 });
 

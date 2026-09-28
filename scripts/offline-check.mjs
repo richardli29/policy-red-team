@@ -27,7 +27,7 @@ const note = (m) => console.log(`  ${m}`);
 
 const work = await mkdtemp(path.join(tmpdir(), 'policy-offline-'));
 const server = spawn(process.execPath, [path.join(ROOT, 'dist', 'server-fixture.js')], {
-  env: { ...process.env, POLICY_PORT: String(PORT), POLICY_DATA_DIR: path.join(work, 'db'), POLICY_SEAL_KEY_DIR: path.join(work, 'keys') },
+  env: { ...process.env, POLICY_PORT: String(PORT), POLICY_DATABASE: '', POLICY_DATA_DIR: path.join(work, 'db'), POLICY_SEAL_KEY_DIR: path.join(work, 'keys') },
   stdio: ['ignore', 'pipe', 'inherit'],
 });
 await new Promise((resolve, reject) => {
