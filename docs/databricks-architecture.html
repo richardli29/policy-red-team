@@ -299,7 +299,7 @@
 
           <rect x="800" y="276" width="160" height="72" rx="4" class="b-key"/>
           <text x="880" y="300" text-anchor="middle" class="t-b">Model Serving</text>
-          <text x="880" y="318" text-anchor="middle" class="t-s">AI Gateway</text>
+          <text x="880" y="318" text-anchor="middle" class="t-s">Unity Gateway</text>
           <text x="880" y="334" text-anchor="middle" class="t-acc">claude-sonnet-5</text>
           <line x1="720" y1="316" x2="796" y2="316" class="ln-acc" marker-end="url(#a1acc)"/>
           <text x="758" y="336" text-anchor="middle" class="t-acc">CAN_QUERY</text>
@@ -418,7 +418,7 @@
           <rect x="570" y="70" width="170" height="110" rx="4" class="b"/>
           <text x="655" y="96" text-anchor="middle" class="t-b">/serving-endpoints</text>
           <text x="655" y="118" text-anchor="middle" class="t-s">bearer: SP token</text>
-          <text x="655" y="134" text-anchor="middle" class="t-s">AI Gateway limits</text>
+          <text x="655" y="134" text-anchor="middle" class="t-s">Unity Gateway limits</text>
           <text x="655" y="150" text-anchor="middle" class="t-s">and usage tracking</text>
 
           <rect x="800" y="70" width="160" height="110" rx="4" class="b"/>
@@ -557,7 +557,7 @@
     <div class="two">
       <div class="note">
         <h3>Cost</h3>
-        <p>A full run on a one-page sample used 5.6 million tokens, 4.97 million of them input, in about 1 h 45 m. Every call resends the shared context: Claude on Serving accepts cache markers, but a probe read the cache only once in four calls, so caching is an experiment behind <code>POLICY_DATABRICKS_PROMPT_CACHE</code>. Set a token ceiling in <code>/admin</code> and rate limits on the endpoint's AI Gateway before sharing.</p>
+        <p>A full run on a one-page sample used 5.6 million tokens, 4.97 million of them input, in about 1 h 45 m. Every call resends the shared context: Claude on Serving accepts cache markers, but a probe read the cache only once in four calls, so caching is an experiment behind <code>POLICY_DATABRICKS_PROMPT_CACHE</code>. Set a token ceiling in <code>/admin</code> and rate limits on the endpoint's Unity Gateway before sharing.</p>
       </div>
       <div class="note">
         <h3>Restarts</h3>
