@@ -11,7 +11,7 @@ function required(name: string): string {
   const value = process.env[name]?.trim();
   if (!value) {
     throw new Error(
-      `${name} is not set. Copy .env.example to .env and put your key in it.`
+      `${name} is not set. Set it in the environment, or in app.yaml on Databricks Apps.`
     );
   }
   return value;

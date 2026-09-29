@@ -295,9 +295,8 @@ npm test               unit tests, no database
 npm run test:all       every gate: unit, integration, accessibility, browser walk, offline pack
 ```
 
-The browser gates need `npx playwright install chromium`. `.env.example` is for
-running it on your own machine only; a Databricks App takes its settings from
-`app.yaml` and never reads a `.env` file. `docs/databricks-architecture.html`
+The browser gates need `npx playwright install chromium`. The app's settings
+live in `app.yaml`. `docs/databricks-architecture.html`
 shows how the parts fit together on Databricks. `AGENTS.md` lists the things that
 will cost you an hour if nobody says them.
 
