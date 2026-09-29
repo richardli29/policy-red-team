@@ -176,7 +176,7 @@ estimate for the whole run. A real policy paper costs more.
   and a cache write costs more than a plain read. Try it on one run and compare
   the "served from cache" figure (now reported truthfully) before leaving it on.
 - **Set a token ceiling in `/admin`.** It is the one control inside the app.
-- **Put limits on the endpoint.** Its [AI Gateway](https://docs.databricks.com/aws/en/ai-gateway/)
+- **Put limits on the endpoint.** Its [Unity Gateway](https://docs.databricks.com/aws/en/ai-gateway/)
   settings in the Serving UI give rate limits, usage tracking and inference
   tables. Worth doing before sharing the app: a single run can make hundreds of
   calls.
@@ -295,7 +295,9 @@ npm test               unit tests, no database
 npm run test:all       every gate: unit, integration, accessibility, browser walk, offline pack
 ```
 
-The browser gates need `npx playwright install chromium`. `docs/databricks-architecture.html`
+The browser gates need `npx playwright install chromium`. `.env.example` is for
+running it on your own machine only; a Databricks App takes its settings from
+`app.yaml` and never reads a `.env` file. `docs/databricks-architecture.html`
 shows how the parts fit together on Databricks. `AGENTS.md` lists the things that
 will cost you an hour if nobody says them.
 
