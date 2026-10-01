@@ -519,20 +519,41 @@
 
     <div class="two">
       <div style="display:grid;gap:10px">
-        <h3>First deployment</h3>
+        <h3>Deploying it</h3>
         <ol class="steps">
-          <li><code>npm ci</code></li>
-          <li><code>databricks bundle run init_secrets -t dev</code></li>
-          <li><code>databricks bundle deploy -t dev</code></li>
-          <li><code>databricks bundle run policy_red_team -t dev</code></li>
-          <li>Set a token ceiling in <code>/admin</code>, then grant CAN_USE</li>
+          <li><code>databricks auth login --host &lt;workspace&gt; --profile &lt;profile&gt;</code></li>
+          <li><code>npm run deploy -- &lt;profile&gt;</code>: secrets, build, upload and restart in one go</li>
+          <li>First time only: set a token ceiling in <code>/admin</code>, then grant CAN_USE</li>
         </ol>
       </div>
       <div style="display:grid;gap:10px">
         <h3>Another workspace</h3>
-        <p>Add a target to <code>databricks.yml</code> with that workspace's host and, if needed, a different <code>serving_endpoint</code>. Nothing else in the repository names a workspace.</p>
+        <p>Log in to it with another profile and run the same command. Nothing in the repository names a workspace.</p>
       </div>
     </div>
+  </section>
+
+  <section id="live">
+    <span class="eyebrow">Getting it live</span>
+    <h2>How hard it was, and what is now reusable</h2>
+    <p>The app ran unchanged on a laptop. Getting it live on Databricks took about two days, and none of the work was in the app's own logic: every problem sat at a boundary between a Node service written for one machine and a managed platform. Each is now solved in this repository, and most would apply to the next Node or TypeScript app deployed the same way.</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>What got in the way</th><th>How it was solved</th><th>Reusable for the next app</th></tr></thead>
+        <tbody>
+          <tr><td>The platform's <code>npm install</code> failed on three deploys, refusing a different package each time</td><td>Build on the deployer's machine into one self-contained bundle, so the platform installs nothing (<code>scripts/stage-app.mjs</code>)</td><td><span class="tag tag-ok">yes</span></td></tr>
+          <tr><td>The first bundle was 10.9 MB, over the 10 MB per-file limit</td><td>Minified, with no source map: 5.6 MB</td><td><span class="tag tag-ok">yes</span></td></tr>
+          <tr><td>The app's disk is wiped on restart, and the app kept its database on disk</td><td>Lakebase Postgres in its own schema, with the app's service principal as the login</td><td><span class="tag tag-ok">yes</span></td></tr>
+          <tr><td>Tables landed in the wrong schema, because the Lakebase connection pool ignores the usual setting</td><td>Set the schema on every new connection</td><td><span class="tag tag-ok">yes</span></td></tr>
+          <tr><td>Claude on Model Serving refuses JSON mode, wraps its JSON in code fences and returns replies in parts</td><td>A <code>databricks</code> model provider that adjusts each request and reply</td><td><span class="tag tag-ok">yes</span>, for any app calling Claude</td></tr>
+          <tr><td>Errors came back as <q>400 (no body)</q>, hiding the reason</td><td>Databricks' error body reshaped into the one the OpenAI SDK reads</td><td><span class="tag tag-ok">yes</span></td></tr>
+          <tr><td>The longest stages were cut off at 25,000 output tokens</td><td>Larger output allowance for Claude, and more again on a retry</td><td><span class="tag tag-plain">this app</span></td></tr>
+          <tr><td>The bundle's secret permissions removed the app's own access to its secrets</td><td>A script creates the secrets; the app's resources grant the access</td><td><span class="tag tag-ok">yes</span></td></tr>
+          <tr><td>Restarts lost work, because the platform gives a stopping app 15 seconds</td><td>The app hands its work back to the queue after 10 seconds</td><td><span class="tag tag-plain">this app</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>What a future app inherits is the route: build locally, upload with a bundle, store state in Lakebase, call models as the app's service principal, and deploy with one command.</p>
   </section>
 
   <section id="access">
@@ -557,7 +578,7 @@
     <div class="two">
       <div class="note">
         <h3>Cost</h3>
-        <p>A full run on a one-page sample used 5.6 million tokens, 4.97 million of them input, in about 1 h 45 m. Every call resends the shared context: Claude on Serving accepts cache markers, but a probe read the cache only once in four calls, so caching is an experiment behind <code>POLICY_DATABRICKS_PROMPT_CACHE</code>. Set a token ceiling in <code>/admin</code> and rate limits on the endpoint's Unity Gateway before sharing.</p>
+        <p>A run on a one-page sample used 5.6 million tokens, 4.97 million of them input, in about 1 h 45 m, and cost about $18 in model calls at list price. The app and its database add about $360 a month while the app is running. Every call resends the shared context: Claude on Serving accepts cache markers, but a probe read the cache only once in four calls, so caching is an experiment behind <code>POLICY_DATABRICKS_PROMPT_CACHE</code>. Set a token ceiling in <code>/admin</code> and rate limits on the endpoint's Unity Gateway before sharing.</p>
       </div>
       <div class="note">
         <h3>Restarts</h3>
