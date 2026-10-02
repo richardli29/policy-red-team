@@ -152,6 +152,16 @@
   .moves dd { margin: 0; font-size: 0.93rem; }
   ul.plain { margin: 0; padding-left: 1.1em; display: grid; gap: 8px; font-size: 0.93rem; }
   q { quotes: "\201C" "\201D"; font-style: italic; }
+  details.tech { border: 1px solid var(--line); background: var(--panel); }
+  details.tech > summary { cursor: pointer; padding: 16px 18px; font-family: var(--font-display); font-weight: 700; font-size: 1.15rem; }
+  details.tech > summary span { display: block; font-family: var(--font-body); font-weight: 400; font-size: 0.92rem; color: var(--muted); margin-top: 4px; }
+  details.tech[open] > summary { border-bottom: 1px solid var(--line); }
+  .tech-body { padding: 24px 18px; display: grid; gap: 56px; }
+  .summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); }
+  .summary div { background: var(--panel); padding: 16px 18px; display: grid; gap: 6px; align-content: start; }
+  .summary h3 { font-size: 1rem; color: var(--accent); }
+  .summary p { font-size: 0.93rem; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
   @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
 </style>
 </head>
@@ -160,45 +170,43 @@
 <div class="page">
 
   <header class="intro">
-    <span class="eyebrow">Architecture · Databricks Apps</span>
+    <span class="eyebrow">Briefing · Running AI apps on Databricks</span>
     <h1>Policy Red Team on Databricks</h1>
-    <p class="lede">A Node and TypeScript service that reads a policy paper the way an adversary would. On Databricks it runs as one App, keeps its assessments in Lakebase Postgres, and calls a Model Serving endpoint as its own service principal. No API keys are stored anywhere.</p>
-    <dl class="facts">
-      <div><dt>Workspace</dt><dd>any, chosen by CLI profile</dd></div>
-      <div><dt>App</dt><dd>policy-red-team · Node 22.16 · port 8000</dd></div>
-      <div><dt>Model endpoint</dt><dd>databricks-claude-sonnet-5</dd></div>
-      <div><dt>Database</dt><dd>Lakebase policy-red-team / production / databricks_postgres</dd></div>
-      <div><dt>Schema</dt><dd>policy_red_team · 15 tables · 13 migrations</dd></div>
-      <div><dt>Deployed by</dt><dd>databricks.yml (bundle)</dd></div>
-    </dl>
+    <p class="lede">An AI tool that reads a policy paper the way someone looking for loopholes would, now running live on Databricks. It shows that a team's own AI app can be hosted on the platform securely, at a predictable cost, and deployed again with one command.</p>
+    <div class="summary">
+      <div><h3>What it does</h3><p>Finds where a policy could be gamed, by whom, and how, while staying within the rules.</p></div>
+      <div><h3>Where it runs</h3><p>Entirely inside the Databricks workspace. Staff sign in with their existing accounts.</p></div>
+      <div><h3>What it costs</h3><p>About $360 a month to keep running, plus roughly $18 per short paper assessed.</p></div>
+      <div><h3>What it proves</h3><p>Apps like this can go live in days, and the route is now reusable for the next one.</p></div>
+    </div>
   </header>
 
   <section id="what">
-    <span class="eyebrow">In plain English</span>
+    <span class="eyebrow">The app</span>
     <h2>What it does</h2>
     <p class="lede">You give it a policy paper. It reads the paper the way someone looking for a way round it would, and tells you where the policy is exposed.</p>
     <p>For each organisation the paper involves, it asks three questions. What does this body want? What does the policy make it pay for, or blame it for? And what could it do to serve itself at the policy's expense, while staying within the rules? The plays that stay within the rules matter most, because nothing in the policy will stop them.</p>
 
     <ol class="flow" aria-label="How a run goes">
-      <li><span class="n">1</span><h3>Upload a paper</h3><p>A PDF, Word document or text file, with a title. Choose how many model calls run at once.</p></li>
-      <li><span class="n">2</span><h3>It works through 18 stages</h3><p>Reads the paper, works out who is in it, tests it, attacks it, then writes it up and challenges its own conclusions. About an hour for a short paper.</p></li>
-      <li><span class="n">3</span><h3>Read the report</h3><p>In the browser, or downloaded as Word, markdown, or a pack that opens offline.</p></li>
+      <li><span class="n">1</span><h3>Upload a paper</h3><p>A PDF, Word document or text file.</p></li>
+      <li><span class="n">2</span><h3>It works through 18 stages</h3><p>It reads the paper, works out who is involved, looks for weak points, then writes it up and challenges its own conclusions. Under two hours for a short paper.</p></li>
+      <li><span class="n">3</span><h3>Read the report</h3><p>In the browser, or downloaded as a Word document.</p></li>
     </ol>
 
     <h3>An example, from a real run</h3>
     <p>The sample paper is six sentences about a local access programme: the Department commissions the Council, the Council is accountable and bears the cost, and <q>Providers supply data to the Council, but no data-sharing payment or enforcement power is specified.</q> From that, the run found 17 plays across the three bodies. Four of them:</p>
     <div class="table-wrap">
       <table class="plays">
-        <thead><tr><th>Who</th><th>The play</th><th>Within the rules?</th><th>Incentive</th><th>Ease</th><th>Impact</th><th>Concealment</th><th>Exposure</th></tr></thead>
+        <thead><tr><th>Who</th><th>What they could do</th><th>Within the rules?</th><th>Risk score</th></tr></thead>
         <tbody>
-          <tr><td>Department</td><td>Uses the annual review to say it will fix the funding and authority gap, without ever committing to do so</td><td><span class="tag tag-plain">yes</span></td><td>0.80</td><td>0.85</td><td>0.75</td><td>0.70</td><td class="score">0.77</td></tr>
-          <tr><td>Providers</td><td>Supply data at the lowest quality and timeliness that avoids a visible breakdown, since nothing pays for or enforces better</td><td><span class="tag tag-plain">yes</span></td><td>0.75</td><td>0.85</td><td>0.70</td><td>0.75</td><td class="score">0.76</td></tr>
-          <tr><td>Council</td><td>When short of staff, gets the monthly report in on time first and checks the data behind it second, if at all</td><td><span class="tag tag-plain">yes</span></td><td>0.70</td><td>0.80</td><td>0.65</td><td>0.80</td><td class="score">0.73</td></tr>
-          <tr><td>Providers</td><td>Coordinate a simultaneous slow-down in data supply to force renegotiation</td><td><span class="tag tag-grey">grey area</span></td><td>0.60</td><td>0.35</td><td>0.65</td><td>0.30</td><td class="score">0.45</td></tr>
+          <tr><td>Department</td><td>Uses the annual review to say it will fix the funding and authority gap, without ever committing to do so</td><td><span class="tag tag-plain">yes</span></td><td class="score">0.77</td></tr>
+          <tr><td>Providers</td><td>Supply data at the lowest quality and timeliness that avoids a visible breakdown, since nothing pays for or enforces better</td><td><span class="tag tag-plain">yes</span></td><td class="score">0.76</td></tr>
+          <tr><td>Council</td><td>When short of staff, gets the monthly report in on time first and checks the data behind it second, if at all</td><td><span class="tag tag-plain">yes</span></td><td class="score">0.73</td></tr>
+          <tr><td>Providers</td><td>Coordinate a simultaneous slow-down in data supply to force renegotiation</td><td><span class="tag tag-grey">grey area</span></td><td class="score">0.45</td></tr>
         </tbody>
       </table>
     </div>
-    <p class="small">The model scores each play on four factors, from 0 to 1. The app ranks them by exposure, the geometric mean of the four, so a play that is weak on any one factor ranks low. The coordinated slow-down would hurt, but it is hard to organise and easy to spot. The three above it are easy, deniable and entirely allowed, which is what makes them the real risk.</p>
+    <p class="small">Each play gets a risk score from 0 to 1, combining how much the organisation would want to do it, how easy it is, how much damage it would do and how hard it would be to spot. The coordinated slow-down would hurt, but it is hard to organise and easy to see. The three above it are easy, deniable and entirely allowed, which is what makes them the real risk.</p>
 
     <div class="two">
       <div class="panel">
@@ -216,13 +224,135 @@
         <ul class="plain">
           <li><strong>Not an assurance review.</strong> It never says a policy is fine. A clean report means it found nothing, which is not the same thing.</li>
           <li><strong>Not about people.</strong> Every profile is a hypothesis about an organisation's incentives, never a finding about a named person.</li>
-          <li><strong>Not the last word.</strong> Findings rest on the paper alone while web research is off, and the report says so.</li>
+          <li><strong>Not the last word.</strong> It works from the paper alone, with no internet searching, and the report says so.</li>
           <li><strong>Not a government service.</strong> It uses the GOV.UK Design System for its forms and documents, without the crown, the royal arms or the GDS typeface.</li>
         </ul>
       </div>
     </div>
   </section>
 
+  <section id="how">
+    <span class="eyebrow">On Databricks</span>
+    <h2>How it runs</h2>
+    <p>The whole app sits inside the Databricks workspace. Nothing new needs to be bought, hosted or connected outside it.</p>
+    <figure>
+      <div class="diagram">
+        <svg viewBox="0 0 900 330" role="img" aria-label="Staff sign in to Databricks with their existing accounts and open the app. Inside the Databricks workspace the app asks a hosted AI model for each step, saves its assessments in a Databricks database and reads its passwords from the Databricks secret store. Nothing leaves the workspace.">
+          <defs>
+            <marker id="s1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah"/></marker>
+            <marker id="s1acc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah-acc"/></marker>
+          </defs>
+          <rect x="20" y="130" width="130" height="70" rx="4" class="b"/>
+          <text x="85" y="160" text-anchor="middle" class="t-b">Staff</text>
+          <text x="85" y="180" text-anchor="middle" class="t-s">web browser</text>
+
+          <rect x="200" y="20" width="680" height="290" rx="6" class="b-app"/>
+          <text x="220" y="44" class="t-acc">THE DATABRICKS WORKSPACE</text>
+
+          <rect x="220" y="125" width="150" height="80" rx="4" class="b-key"/>
+          <text x="295" y="158" text-anchor="middle" class="t-b">Databricks sign-in</text>
+          <text x="295" y="178" text-anchor="middle" class="t-s">existing accounts</text>
+
+          <rect x="430" y="125" width="170" height="80" rx="4" class="b-key"/>
+          <text x="515" y="158" text-anchor="middle" class="t-b">Policy Red Team</text>
+          <text x="515" y="178" text-anchor="middle" class="t-s">the app</text>
+
+          <rect x="670" y="60" width="190" height="64" rx="4" class="b"/>
+          <text x="765" y="88" text-anchor="middle" class="t-b">AI model</text>
+          <text x="765" y="106" text-anchor="middle" class="t-s">Claude, via Unity Gateway</text>
+
+          <rect x="670" y="140" width="190" height="64" rx="4" class="b"/>
+          <text x="765" y="168" text-anchor="middle" class="t-b">Database</text>
+          <text x="765" y="186" text-anchor="middle" class="t-s">Lakebase</text>
+
+          <rect x="670" y="220" width="190" height="64" rx="4" class="b"/>
+          <text x="765" y="248" text-anchor="middle" class="t-b">Secret store</text>
+          <text x="765" y="266" text-anchor="middle" class="t-s">passwords and keys</text>
+
+          <line x1="150" y1="165" x2="216" y2="165" class="ln" marker-end="url(#s1)"/>
+          <line x1="370" y1="165" x2="426" y2="165" class="ln" marker-end="url(#s1)"/>
+          <text x="398" y="155" text-anchor="middle" class="t-s">opens</text>
+          <polyline points="600,150 635,150 635,92 666,92" class="ln-acc" marker-end="url(#s1acc)"/>
+          <text x="628" y="86" text-anchor="end" class="t-acc">asks</text>
+          <line x1="600" y1="172" x2="666" y2="172" class="ln" marker-end="url(#s1)"/>
+          <text x="633" y="190" text-anchor="middle" class="t-s">saves</text>
+          <polyline points="600,195 635,195 635,252 666,252" class="ln" marker-end="url(#s1)"/>
+          <text x="628" y="270" text-anchor="end" class="t-s">reads</text>
+        </svg>
+      </div>
+      <figcaption>Staff sign in to Databricks as they already do, and only people given access can open the app. The app asks a Databricks-hosted AI model for each step of its analysis, keeps every assessment in a Databricks database, and reads its passwords from the secret store. It does not search the internet, so the paper and the findings stay inside the workspace.</figcaption>
+    </figure>
+  </section>
+
+  <section id="safe">
+    <span class="eyebrow">Security and governance</span>
+    <h2>Why it is safe to run</h2>
+    <div class="two">
+      <ul class="plain">
+        <li><strong>Data stays in the workspace.</strong> Papers, findings and the AI calls all stay on Databricks. Nothing goes to an outside AI service.</li>
+        <li><strong>No passwords or keys in the code.</strong> The app proves who it is to Databricks automatically. Its one admin password is generated and kept in the secret store.</li>
+        <li><strong>Access is controlled in one place.</strong> Only people granted access to the app can open it, using their existing Databricks sign-in.</li>
+      </ul>
+      <ul class="plain">
+        <li><strong>The AI model can be governed.</strong> Unity Gateway can limit how much the model is used and track every call.</li>
+        <li><strong>Spending has a ceiling.</strong> The app can be given a limit on how much each assessment may use, and an assessment stops when it reaches it.</li>
+        <li><strong>Everything is checked into code.</strong> The setup is written down and repeatable, so each deployment is the same as the last.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section id="live">
+    <span class="eyebrow">Getting it live</span>
+    <h2>How hard it was</h2>
+    <p>The app already worked on a laptop. Getting it live on Databricks took about two days. None of that was changing what the app does: it was all about fitting an app built for one computer onto a managed platform.</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>The problem</th><th>The fix</th><th>Helps the next app</th></tr></thead>
+        <tbody>
+          <tr><td>The platform could not install the app's building blocks</td><td>Build the app first, then upload it ready to run</td><td><span class="tag tag-ok">yes</span></td></tr>
+          <tr><td>The app lost its data whenever it restarted</td><td>Keep the data in a Databricks database (Lakebase)</td><td><span class="tag tag-ok">yes</span></td></tr>
+          <tr><td>The AI model replied in a slightly different format than the app expected</td><td>A small adapter that tidies each reply</td><td><span class="tag tag-ok">yes</span></td></tr>
+          <tr><td>Long answers from the model were being cut short</td><td>Let the model write longer answers</td><td><span class="tag tag-plain">this app</span></td></tr>
+          <tr><td>Setting up passwords and access by hand was fiddly</td><td>A script sets them up automatically</td><td><span class="tag tag-ok">yes</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p><strong>Now it deploys with one command.</strong> The same route should work for the next app like this, without repeating those two days.</p>
+  </section>
+
+  <section id="cost">
+    <span class="eyebrow">Cost</span>
+    <h2>What it costs to run</h2>
+    <p>Measured from the workspace's own billing records while the app was tested. These are list prices in US dollars, before any discount.</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>What</th><th>Cost</th><th>Notes</th></tr></thead>
+        <tbody>
+          <tr><td>Keeping the app running</td><td class="num">about $340 a month</td><td>Can be switched off when not in use, which removes most of this</td></tr>
+          <tr><td>The database</td><td class="num">about $22 a month</td><td>Lower when the app is switched off</td></tr>
+          <tr><td>Assessing a short paper</td><td class="num">about $18 each</td><td>Measured on a one-page sample</td></tr>
+          <tr><td>Assessing a long paper (about 70 pages)</td><td class="num">roughly $200 each</td><td>An estimate. The next step is to measure one</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="small">For example, five long papers a month would come to about $1,400 in total. The AI model is most of the cost, so the number of papers matters far more than the running cost.</p>
+  </section>
+
+  <section id="next">
+    <span class="eyebrow">Next steps</span>
+    <h2>Before relying on it</h2>
+    <ol class="steps">
+      <li><strong>Assess one real paper</strong> of typical length, to confirm the cost and time.</li>
+      <li><strong>Decide who should have access.</strong> Everyone with access sees every assessment in the app.</li>
+      <li><strong>Set the spending limits</strong>, in the app and on the AI model, before sharing it more widely.</li>
+      <li><strong>Try a second AI model</strong> to compare cost and quality.</li>
+      <li><strong>Hold back unpublished papers for now.</strong> The option to lock a sensitive paper's text needs somewhere permanent to keep its keys first.</li>
+    </ol>
+  </section>
+
+  <details class="tech">
+    <summary>Technical detail<span>For the engineering team: how the app is built, how it calls the model and how it is deployed.</span></summary>
+    <div class="tech-body">
   <section id="overview">
     <span class="eyebrow">The system</span>
     <h2>What runs where</h2>
@@ -315,7 +445,6 @@
       <figcaption>Readers connect over HTTPS, and Databricks Apps handles the sign-in, the encryption and the network in front of the app, so none of it needs setting up. The only hop out of the App is to workspace services: the OAuth token endpoint, Model Serving and Lakebase. Each is reached as the App's own service principal, which the bundle grants exactly the permission it needs. Web research is switched off (<code>POLICY_SEARCH=none</code>), so nothing leaves the workspace.</figcaption>
     </figure>
   </section>
-
   <section id="run">
     <span class="eyebrow">A run</span>
     <h2>From upload to report</h2>
@@ -387,7 +516,6 @@
       <div><span class="n">Stages 13–18</span><h3>Write it up and challenge it</h3><p>Synthesis, persona library, theory of change, options, independent challenge, assured synthesis</p></div>
     </div>
   </section>
-
   <section id="models">
     <span class="eyebrow">Model calls</span>
     <h2>How a pipeline request reaches Model Serving</h2>
@@ -450,7 +578,6 @@
       </table>
     </div>
   </section>
-
   <section id="data">
     <span class="eyebrow">State</span>
     <h2>Where each thing is kept</h2>
@@ -467,7 +594,6 @@
       </table>
     </div>
   </section>
-
   <section id="deploy">
     <span class="eyebrow">Deployment</span>
     <h2>How it gets there</h2>
@@ -532,26 +658,6 @@
       </div>
     </div>
   </section>
-
-  <section id="live">
-    <span class="eyebrow">Getting it live</span>
-    <h2>How hard it was</h2>
-    <p>The app already worked on a laptop. Getting it live on Databricks took about two days. None of that was changing what the app does: it was all about fitting an app built for one computer onto a managed platform.</p>
-    <div class="table-wrap">
-      <table>
-        <thead><tr><th>The problem</th><th>The fix</th><th>Helps the next app</th></tr></thead>
-        <tbody>
-          <tr><td>The platform could not install the app's building blocks</td><td>Build the app first, then upload it ready to run</td><td><span class="tag tag-ok">yes</span></td></tr>
-          <tr><td>The app lost its data whenever it restarted</td><td>Keep the data in a Databricks database (Lakebase)</td><td><span class="tag tag-ok">yes</span></td></tr>
-          <tr><td>The AI model replied in a slightly different format than the app expected</td><td>A small adapter that tidies each reply</td><td><span class="tag tag-ok">yes</span></td></tr>
-          <tr><td>Long answers from the model were being cut short</td><td>Let the model write longer answers</td><td><span class="tag tag-plain">this app</span></td></tr>
-          <tr><td>Setting up passwords and access by hand was fiddly</td><td>A script sets them up automatically</td><td><span class="tag tag-ok">yes</span></td></tr>
-        </tbody>
-      </table>
-    </div>
-    <p><strong>Now it is one command to deploy.</strong> The same route should work for the next app like this, without repeating those two days.</p>
-  </section>
-
   <section id="access">
     <span class="eyebrow">Security</span>
     <h2>Who can do what</h2>
@@ -567,7 +673,6 @@
       </table>
     </div>
   </section>
-
   <section id="limits">
     <span class="eyebrow">Limits and open items</span>
     <h2>What to know before relying on it</h2>
@@ -590,9 +695,11 @@
       </div>
     </div>
   </section>
+    </div>
+  </details>
 
   <footer>
-    Built from the deployed configuration on 24 September 2026. Source: <span class="mono">databricks.yml</span>, <span class="mono">app.yaml</span>, <span class="mono">src/lib/llm/providers/databricks.ts</span>, <span class="mono">src/lib/db/index.ts</span>, <span class="mono">scripts/stage-app.mjs</span>.
+    Prepared October 2026 from the live deployment and the workspace's billing records.
   </footer>
 </div>
 </body>
