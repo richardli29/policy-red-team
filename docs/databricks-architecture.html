@@ -152,6 +152,8 @@
   .moves dd { margin: 0; font-size: 0.93rem; }
   ul.plain { margin: 0; padding-left: 1.1em; display: grid; gap: 8px; font-size: 0.93rem; }
   q { quotes: "\201C" "\201D"; font-style: italic; }
+  .deep { display: grid; gap: 56px; border-top: 3px solid var(--accent); padding-top: 32px; }
+  .deep-head { display: grid; gap: 12px; }
   details.tech { border: 1px solid var(--line); background: var(--panel); }
   details.tech > summary { cursor: pointer; padding: 16px 18px; font-family: var(--font-display); font-weight: 700; font-size: 1.15rem; }
   details.tech > summary span { display: block; font-family: var(--font-body); font-weight: 400; font-size: 0.92rem; color: var(--muted); margin-top: 4px; }
@@ -350,9 +352,12 @@
     </ol>
   </section>
 
-  <details class="tech">
-    <summary>Technical detail<span>For the engineering team: how the app is built, how it calls the model and how it is deployed.</span></summary>
-    <div class="tech-body">
+  <div class="deep">
+    <header class="deep-head">
+      <span class="eyebrow">Deep dive</span>
+      <h2>Technical architecture</h2>
+      <p>For anyone who wants the detail: how the app is built, how a run works, how it calls the AI model, where data is kept and how it is deployed.</p>
+    </header>
   <section id="overview">
     <span class="eyebrow">The system</span>
     <h2>What runs where</h2>
@@ -695,8 +700,7 @@
       </div>
     </div>
   </section>
-    </div>
-  </details>
+  </div>
 
   <footer>
     Prepared October 2026 from the live deployment and the workspace's billing records.
