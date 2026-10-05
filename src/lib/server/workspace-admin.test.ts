@@ -1,81 +1,72 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { IncomingMessage } from 'node:http';
-import { adminGroup, isGroupAdmin, scimLookup, setGroupLookup, workspaceUser } from './workspace-admin';
+import { adminGroup, isGroupAdmin, scimWhoIs, setWhoIs, workspaceUser } from './workspace-admin';
 
-const as = (email?: string) => ({ headers: email ? { 'x-forwarded-email': email } : {} }) as IncomingMessage;
+const as = (headers: Record<string, string>) => ({ headers }) as unknown as IncomingMessage;
+
+beforeEach(() => {
+  process.env.DATABRICKS_APP_NAME = 'policy-red-team';
+  process.env.POLICY_ADMIN_GROUP = 'admins';
+  vi.spyOn(console, 'warn').mockImplementation(() => {});
+});
 
 afterEach(() => {
   delete process.env.DATABRICKS_APP_NAME;
   delete process.env.POLICY_ADMIN_GROUP;
   delete process.env.DATABRICKS_HOST;
-  setGroupLookup(null);
+  setWhoIs(null);
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
+// Each token belongs to one person, as the workspace's /Me would say.
+const people: Record<string, { userName: string; groups: string[] }> = {
+  'admin-token': { userName: 'admin@example.org', groups: ['readers', 'admins'] },
+  'reader-token': { userName: 'reader@example.org', groups: ['readers', 'admins-old'] },
+};
+const workspace = async (token: string) => {
+  const who = people[token];
+  if (!who) throw new Error('401');
+  return who;
+};
+
 describe('who is an admin on Databricks Apps', () => {
-  it('names a group only on Apps, where the sign-in header can be trusted', () => {
-    process.env.POLICY_ADMIN_GROUP = 'policy-red-team-admins';
+  it('names a group only on Apps', () => {
+    delete process.env.DATABRICKS_APP_NAME;
     expect(adminGroup()).toBeNull();
     process.env.DATABRICKS_APP_NAME = 'policy-red-team';
-    expect(adminGroup()).toBe('policy-red-team-admins');
+    expect(adminGroup()).toBe('admins');
+    expect(workspaceUser(as({ 'x-forwarded-email': 'a@example.org' }))).toBe('a@example.org');
   });
 
-  it('reads the signed-in user from the proxy header', () => {
-    expect(workspaceUser(as('a@example.org'))).toBe('a@example.org');
-    expect(workspaceUser(as())).toBeNull();
+  it('admits a member and refuses everyone else, matching the group name exactly', async () => {
+    setWhoIs(workspace);
+    expect(await isGroupAdmin(as({ 'x-forwarded-access-token': 'admin-token', 'x-forwarded-email': 'admin@example.org' }))).toBe(true);
+    expect(await isGroupAdmin(as({ 'x-forwarded-access-token': 'reader-token', 'x-forwarded-email': 'reader@example.org' }))).toBe(false);
   });
 
-  it('admits members, refuses others, and refuses when the lookup fails', async () => {
-    process.env.DATABRICKS_APP_NAME = 'policy-red-team';
-    process.env.POLICY_ADMIN_GROUP = 'admins';
-    setGroupLookup(async (email) => {
-      if (email === 'broken@example.org') throw new Error('500');
-      return email === 'admin@example.org';
-    });
-    vi.spyOn(console, 'warn').mockImplementation(() => {});
-    expect(await isGroupAdmin(as('admin@example.org'))).toBe(true);
-    expect(await isGroupAdmin(as('reader@example.org'))).toBe(false);
-    expect(await isGroupAdmin(as('broken@example.org'))).toBe(false);
-    expect(await isGroupAdmin(as())).toBe(false);
+  it('refuses with no token, a token the workspace rejects, or an email the token does not belong to', async () => {
+    setWhoIs(workspace);
+    expect(await isGroupAdmin(as({ 'x-forwarded-email': 'admin@example.org' }))).toBe(false);
+    expect(await isGroupAdmin(as({ 'x-forwarded-access-token': 'forged', 'x-forwarded-email': 'admin@example.org' }))).toBe(false);
+    expect(await isGroupAdmin(as({ 'x-forwarded-access-token': 'admin-token', 'x-forwarded-email': 'someone@example.org' }))).toBe(false);
   });
 
-  it('asks the workspace for the user’s own groups and matches the name exactly', async () => {
-    process.env.DATABRICKS_HOST = 'x.cloud.databricks.com';
-    const urls: string[] = [];
-    vi.stubGlobal('fetch', async (url: string) => {
-      if (url.endsWith('/oidc/v1/token')) return new Response(JSON.stringify({ access_token: 't', expires_in: 3600 }));
-      urls.push(url);
-      return new Response(JSON.stringify({ Resources: [{ id: 'u1', userName: 'A@example.org', groups: [{ display: 'admins-old' }, { display: 'admins' }] }] }));
-    });
-    expect(await scimLookup('a@example.org', 'admins')).toBe(true);
-    expect(await scimLookup('a@example.org', 'admin')).toBe(false);
-    expect(decodeURIComponent(urls[0])).toContain('/api/2.0/preview/scim/v2/Users?filter=userName eq "a@example.org"');
+  it('never lets a claimed email ride on someone else’s remembered answer', async () => {
+    setWhoIs(workspace);
+    expect(await isGroupAdmin(as({ 'x-forwarded-access-token': 'admin-token', 'x-forwarded-email': 'admin@example.org' }))).toBe(true);
+    // The admin's answer is remembered against the admin's token, not the email.
+    expect(await isGroupAdmin(as({ 'x-forwarded-access-token': 'reader-token', 'x-forwarded-email': 'admin@example.org' }))).toBe(false);
   });
 
-  it('asks as the signed-in user, with the token Apps forwards, before the app’s own principal', async () => {
+  it('asks /Me with the user’s own token', async () => {
     process.env.DATABRICKS_HOST = 'x.cloud.databricks.com';
     const seen: string[] = [];
     vi.stubGlobal('fetch', async (url: string, init: RequestInit) => {
-      seen.push(`${url.split('/v2/')[1]} ${(init.headers as Record<string, string>).authorization}`);
+      seen.push(`${url} ${(init.headers as Record<string, string>).authorization}`);
       return new Response(JSON.stringify({ userName: 'a@example.org', groups: [{ display: 'admins' }] }));
     });
-    expect(await scimLookup('a@example.org', 'admins', 'user-token')).toBe(true);
-    expect(seen).toEqual(['Me?attributes=userName,groups Bearer user-token']);
-  });
-
-  it('reads the group’s members when the workspace hides a user’s groups from the app', async () => {
-    // What a workspace on 2026-10-05 showed an App's service principal.
-    process.env.DATABRICKS_HOST = 'x.cloud.databricks.com';
-    vi.stubGlobal('fetch', async (url: string) => {
-      if (url.endsWith('/oidc/v1/token')) return new Response(JSON.stringify({ access_token: 't', expires_in: 3600 }));
-      if (url.includes('/Users?')) return new Response(JSON.stringify({ Resources: [{ id: 'u1', userName: 'a@example.org' }] }));
-      return new Response(JSON.stringify({ Resources: [{ displayName: 'admins', members: [{ value: 'u0' }, { value: 'u1' }] }] }));
-    });
-    expect(await scimLookup('a@example.org', 'admins')).toBe(true);
-    vi.stubGlobal('fetch', async (url: string) => {
-      if (url.includes('/Users?')) return new Response(JSON.stringify({ Resources: [{ id: 'u2', userName: 'b@example.org' }] }));
-      return new Response(JSON.stringify({ Resources: [{ displayName: 'admins', members: [{ value: 'u1' }] }] }));
-    });
-    expect(await scimLookup('b@example.org', 'admins')).toBe(false);
+    expect(await scimWhoIs('user-token')).toEqual({ userName: 'a@example.org', groups: ['admins'] });
+    expect(seen).toEqual(['https://x.cloud.databricks.com/api/2.0/preview/scim/v2/Me?attributes=userName,groups Bearer user-token']);
   });
 });

@@ -42,12 +42,8 @@ const ALL: ProviderDefinition[] = [openrouter, codex, azure, databricks];
  */
 export const REACHES_REAL_PROVIDERS = true;
 
-/**
- * A bearer token for the workspace this App runs in, as its own service
- * principal. Here rather than imported from `./databricks` by its caller so
- * the fixture build, which swaps this module out, has no way to the workspace.
- */
-export { databricksToken as workspaceToken, normaliseHost } from './databricks';
+/** The workspace address, normalised. Exported here so the fixture build's copy stands in for it. */
+export { normaliseHost } from './databricks';
 
 /**
  * The ones this install offers.

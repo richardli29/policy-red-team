@@ -172,10 +172,6 @@ const ALL: ProviderDefinition[] = [
  */
 export const REACHES_REAL_PROVIDERS = false;
 
-/** The fixture build has no workspace to ask: every group lookup is refused. */
-export function workspaceToken(): () => Promise<string> {
-  return async () => { throw new Error('The fixture build cannot reach a workspace.'); };
-}
 export function normaliseHost(raw: string | undefined): string | null {
   return raw ? `https://${raw.replace(/^https?:\/\//, '').replace(/\/.*$/, '')}` : null;
 }

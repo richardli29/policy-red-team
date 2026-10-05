@@ -71,6 +71,16 @@ await build({
   banner: { js: "import { createRequire as __createRequire } from 'node:module'; const require = __createRequire(import.meta.url);" },
 });
 
+// PDF.JS'S WORKER, beside the bundle. With no worker thread in Node, pdf.js
+// imports `./pdf.worker.mjs` relative to its own module, which is now
+// `dist/server.js`; esbuild cannot see that import and does not inline it.
+// Without this file every PDF upload failed with "Setting up fake worker
+// failed" (found 2026-10-05; the test runs had all been text files).
+cpSync(
+  path.join(root, 'node_modules', 'pdfjs-dist', 'build', 'pdf.worker.mjs'),
+  path.join(out, 'dist', 'pdf.worker.mjs'),
+);
+
 writeFileSync(
   path.join(out, 'package.json'),
   JSON.stringify(

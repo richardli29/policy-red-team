@@ -1,26 +1,37 @@
 /**
  * ADMIN BY WORKSPACE GROUP, on Databricks Apps.
  *
- * Every request to an App has already passed the workspace sign-in, and the
- * platform's proxy tells the app who it was in `X-Forwarded-Email`. So the
+ * Every request to an App has already passed the workspace sign-in. So the
  * panel needs no password of its own: `POLICY_ADMIN_GROUP` names a workspace
  * group, and its members are the admins. Where users are provisioned from
  * Entra ID (or any IdP) over SCIM, that group is the IdP's own group, and
  * granting or removing an admin happens there with no redeploy.
  *
- * THE HEADER IS ONLY BELIEVED ON APPS. Anywhere else a caller can send
- * whatever headers it likes, so outside an App (`DATABRICKS_APP_NAME` unset)
- * the group setting is ignored and the password gate applies as before.
+ * THE TOKEN IS THE ONLY PROOF OF WHO SOMEONE IS. Apps forwards the signed-in
+ * user's own token in `X-Forwarded-Access-Token`, with the
+ * `iam.current-user:read` scope it grants by default, and the workspace's
+ * `/Me` answers who that token belongs to and which groups they are in. The
+ * email header is never trusted on its own: it is only checked to agree with
+ * the token. Measured on 2026-10-05, the App's own service principal is shown
+ * neither a user's groups nor a group's members, so there is no fallback to
+ * it, and a lookup that fails is a refusal.
  *
- * MEMBERSHIP IS DIRECT. The lookup is the user's own `groups` in the workspace
- * SCIM API, read with the user's own forwarded token. SCIM provisioning from Entra
- * does not carry nested groups, so put admins in the named group itself.
+ * THE ANSWER IS REMEMBERED AGAINST THE TOKEN, hashed, for a minute: never
+ * against an email, which a request can claim. A removal from the group
+ * takes effect within that minute plus the workspace's own delay.
+ *
+ * OUTSIDE AN APP (`DATABRICKS_APP_NAME` unset) the group setting is ignored and
+ * the password gate applies as before.
+ *
+ * MEMBERSHIP IS DIRECT. SCIM provisioning from Entra does not carry nested
+ * groups, so put admins in the named group itself.
  */
+import { createHash } from 'node:crypto';
 import type { IncomingMessage } from 'node:http';
-import { normaliseHost, workspaceToken } from '$lib/llm/providers';
+import { normaliseHost } from '$lib/llm/providers';
 
-/** How long one answer about one person is trusted. A removal takes effect within this. */
 const MEMBERSHIP_TTL_MS = 60_000;
+const MAX_REMEMBERED = 500;
 const memberships = new Map<string, { member: boolean; until: number }>();
 
 export function adminGroup(): string | null {
@@ -28,102 +39,71 @@ export function adminGroup(): string | null {
   return process.env.POLICY_ADMIN_GROUP?.trim() || null;
 }
 
-/** The signed-in workspace user, as the Apps proxy reported them. */
-export function workspaceUser(req: IncomingMessage): string | null {
-  const raw = req.headers['x-forwarded-email'];
-  const email = (Array.isArray(raw) ? raw[0] : raw)?.trim();
-  return email || null;
+function header(req: IncomingMessage, name: string): string | null {
+  const raw = req.headers[name];
+  return (Array.isArray(raw) ? raw[0] : raw)?.trim() || null;
 }
 
-export type GroupLookup = (email: string, group: string, userToken?: string | null) => Promise<boolean>;
+/** The signed-in workspace user, as the Apps proxy reported them. For messages only. */
+export function workspaceUser(req: IncomingMessage): string | null {
+  return header(req, 'x-forwarded-email');
+}
 
-/** Whether `email` is a direct member of `group`, asked of the workspace as the App's service principal. */
-export const scimLookup: GroupLookup = async (email, group, userToken) => {
+/** Who a user token belongs to, and the names of the groups they are directly in. */
+export type Identity = { userName: string; groups: string[] };
+export type WhoIs = (userToken: string) => Promise<Identity>;
+
+export const scimWhoIs: WhoIs = async (userToken) => {
   const host = normaliseHost(process.env.DATABRICKS_HOST);
   if (!host) throw new Error('DATABRICKS_HOST is not set, so group membership cannot be checked.');
-
-  /*
-   * ASKED AS THE USER FIRST. A workspace shows an App's service principal its
-   * users but neither their groups nor a group's members (measured
-   * 2026-10-05). Any user can read their own groups, and Apps forwards the
-   * signed-in user's token with the `iam.current-user:read` scope it grants by
-   * default. The service principal is only the fallback, for a workspace that
-   * shows it more.
-   */
-  if (userToken) {
-    const response = await fetch(`${host}/api/2.0/preview/scim/v2/Me?attributes=userName,groups`, {
-      headers: { authorization: `Bearer ${userToken}`, accept: 'application/scim+json' },
-    });
-    if (response.ok) {
-      const me = (await response.json()) as { userName?: string; groups?: { display?: string }[] };
-      if (me.userName?.toLowerCase() === email.toLowerCase() && me.groups) return me.groups.some((g) => g.display === group);
-    } else {
-      console.warn(`admin: the user's own token could not read their groups (${response.status}); asking as the app`);
-    }
-  }
-
-  const token = workspaceToken({
-    host,
-    clientId: process.env.DATABRICKS_CLIENT_ID ?? '',
-    clientSecret: process.env.DATABRICKS_CLIENT_SECRET ?? '',
+  const response = await fetch(`${host}/api/2.0/preview/scim/v2/Me?attributes=userName,groups`, {
+    headers: { authorization: `Bearer ${userToken}`, accept: 'application/scim+json' },
   });
-  const bearer = typeof token === 'string' ? token : await token();
-  const get = async (path: string) => {
-    const response = await fetch(`${host}/api/2.0/preview/scim/v2/${path}`, {
-      headers: { authorization: `Bearer ${bearer}`, accept: 'application/scim+json' },
-    });
-    if (!response.ok) throw new Error(`the workspace refused the group lookup: ${response.status} ${(await response.text()).slice(0, 200)}`);
-    return response.json();
-  };
-  const quoted = (value: string) => encodeURIComponent(`"${value.replace(/"/g, '')}"`);
-
-  const users = (await get(`Users?filter=userName%20eq%20${quoted(email)}&attributes=id,userName,groups`)) as {
-    Resources?: { id?: string; userName?: string; groups?: { display?: string }[] }[];
-  };
-  const user = users.Resources?.find((r) => r.userName?.toLowerCase() === email.toLowerCase());
-  // Said aloud rather than read as "not a member", so the log says which.
-  if (!user?.id) throw new Error('the workspace did not return this user to the app');
-  // An admin principal sees a user's groups; the App's own principal is not
-  // one and is shown the user without them. The group's member list is the
-  // same fact from the other side.
-  if (user.groups) return user.groups.some((g) => g.display === group);
-
-  const groups = (await get(`Groups?filter=displayName%20eq%20${quoted(group)}&attributes=id,displayName,members`)) as {
-    Resources?: { displayName?: string; members?: { value?: string }[] }[];
-  };
-  const found = groups.Resources?.find((g) => g.displayName === group);
-  if (!found) throw new Error(`the workspace has no group called ${group}, or did not show it to the app`);
-  if (!found.members) throw new Error('the workspace returned the group without its members');
-  return found.members.some((m) => m.value === user.id);
+  if (!response.ok) throw new Error(`the workspace refused the user's own token: ${response.status}`);
+  const me = (await response.json()) as { userName?: string; groups?: { display?: string }[] };
+  if (!me.userName) throw new Error('the workspace did not say who the token belongs to');
+  return { userName: me.userName, groups: (me.groups ?? []).map((g) => g.display ?? '').filter(Boolean) };
 };
 
-let lookup: GroupLookup = scimLookup;
+let whoIs: WhoIs = scimWhoIs;
 
 /** Tests swap the workspace out. */
-export function setGroupLookup(next: GroupLookup | null): void {
-  lookup = next ?? scimLookup;
+export function setWhoIs(next: WhoIs | null): void {
+  whoIs = next ?? scimWhoIs;
   memberships.clear();
 }
 
 /**
- * True when the caller is in the admin group. A failed lookup is a refusal,
- * logged for the operator, never an opening.
+ * True when the caller's own token says they are in the admin group. Anything
+ * missing, mismatched or failed is a refusal, logged for the operator, never
+ * an opening.
  */
 export async function isGroupAdmin(req: IncomingMessage): Promise<boolean> {
   const group = adminGroup();
-  const email = workspaceUser(req);
-  if (!group || !email) return false;
-  const key = email.toLowerCase();
-  const hit = memberships.get(key);
-  if (hit && hit.until > Date.now()) return hit.member;
-  const forwarded = req.headers['x-forwarded-access-token'];
-  const userToken = (Array.isArray(forwarded) ? forwarded[0] : forwarded)?.trim() || null;
-  try {
-    const member = await lookup(email, group, userToken);
-    memberships.set(key, { member, until: Date.now() + MEMBERSHIP_TTL_MS });
-    return member;
-  } catch (err) {
-    console.warn(`admin: could not check ${email} against group ${group}: ${(err as Error).message}`);
+  const token = header(req, 'x-forwarded-access-token');
+  if (!group) return false;
+  if (!token) {
+    console.warn('admin: no user token reached the app, so nobody can be checked against the admin group. Is user authorisation allowed for Apps in this workspace?');
     return false;
   }
+  const key = createHash('sha256').update(token).digest('hex');
+  const hit = memberships.get(key);
+  if (hit && hit.until > Date.now()) return hit.member;
+
+  let member = false;
+  try {
+    const me = await whoIs(token);
+    const email = workspaceUser(req);
+    if (email && email.toLowerCase() !== me.userName.toLowerCase()) {
+      console.warn(`admin: the sign-in header said ${email} but the token belongs to ${me.userName}; refused`);
+    } else {
+      member = me.groups.includes(group);
+    }
+  } catch (err) {
+    console.warn(`admin: could not check against group ${group}: ${(err as Error).message}`);
+    return false;
+  }
+  if (memberships.size >= MAX_REMEMBERED) memberships.delete(memberships.keys().next().value!);
+  memberships.set(key, { member, until: Date.now() + MEMBERSHIP_TTL_MS });
+  return member;
 }
