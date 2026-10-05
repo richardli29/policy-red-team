@@ -1,11 +1,10 @@
 #!/bin/sh
-# Create and fill the app's secret scope, once. Run through the bundle:
+# Create the app's secret scope and its settings key, once. Run through the bundle:
 #
 #   databricks bundle run init_secrets -t <target>
 #
 # Generates what is missing and leaves what is there alone, so running it again
-# never changes a password someone is using or a key the stored settings were
-# encrypted with. Nothing generated is printed.
+# never changes the key the stored settings were encrypted with. Nothing generated is printed.
 set -eu
 scope="${SECRET_SCOPE:?SECRET_SCOPE is not set}"
 
@@ -36,17 +35,6 @@ has() {
 put() {
   printf '%s' "$2" | databricks secrets put-secret "$scope" "$1"
 }
-
-if has admin-password; then
-  echo "admin-password: already set, left alone"
-else
-  # Twelve characters is the floor the app enforces; this is twenty-four.
-  password=$(openssl rand -base64 48 | tr -d '/+=\n' | cut -c1-24)
-  [ "${#password}" -eq 24 ] || { echo "could not generate the admin password" >&2; exit 1; }
-  put admin-password "$password"
-  unset password
-  echo "admin-password: generated. Read it with: databricks secrets get-secret $scope admin-password"
-fi
 
 if has settings-key; then
   echo "settings-key: already set, left alone"

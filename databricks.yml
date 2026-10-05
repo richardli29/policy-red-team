@@ -15,9 +15,11 @@
 # code — that is what the `run` is for, every time the code changes.
 #
 # `init_secrets` creates the secret scope if it is missing and fills it with a
-# generated admin password and settings key, leaving anything already there
-# alone. Read the password back with
-# `databricks secrets get-secret <scope> admin-password`.
+# generated settings key, leaving anything already there alone.
+#
+# ADMINS ARE A GROUP, not a password: members of `admin_group` can open
+# `/admin`. Create the group (in Entra ID, where users come over SCIM) and add
+# the admins to it directly.
 #
 # THE SCOPE IS NOT A BUNDLE RESOURCE, on purpose. A bundle that manages a
 # scope's permissions REPLACES them, and on 2026-09-24 that removed the READ
@@ -42,13 +44,16 @@ variables:
     description: Lakebase Autoscaling project ID, created if it does not exist
     default: policy-red-team
   secret_scope:
-    description: Secret scope holding admin-password and settings-key
+    description: Secret scope holding settings-key
     default: policy-red-team
+  admin_group:
+    description: Workspace group whose members can open /admin (with SCIM, an Entra ID group)
+    default: policy-red-team-admins
 
 experimental:
   scripts:
     # Build here, install nothing there. See `scripts/stage-app.mjs` for why.
-    prebuild: npm run stage:app
+    prebuild: POLICY_ADMIN_GROUP='${var.admin_group}' npm run stage:app
 
 scripts:
   init_secrets:
@@ -105,11 +110,6 @@ resources:
             branch: ${resources.postgres_projects.lakebase.name}/branches/production
             database: ${resources.postgres_projects.lakebase.name}/branches/production/databases/databricks-postgres
             permission: CAN_CONNECT_AND_CREATE
-        - name: admin-password
-          secret:
-            scope: ${var.secret_scope}
-            key: admin-password
-            permission: READ
         - name: settings-key
           secret:
             scope: ${var.secret_scope}

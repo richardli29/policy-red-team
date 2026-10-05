@@ -292,7 +292,7 @@
     <div class="two">
       <ul class="plain">
         <li><strong>Data stays in the workspace.</strong> Papers, findings and the AI calls all stay on Databricks. Nothing goes to an outside AI service.</li>
-        <li><strong>No passwords or keys in the code.</strong> The app proves who it is to Databricks automatically. Its one admin password is generated and kept in the secret store.</li>
+        <li><strong>No passwords or keys to manage.</strong> The app proves who it is to Databricks automatically, and admins are simply the members of one group, managed in Entra ID like any other.</li>
         <li><strong>Access is controlled in one place.</strong> Only people granted access to the app can open it, using their existing Databricks sign-in.</li>
       </ul>
       <ul class="plain">
@@ -419,8 +419,7 @@
           <!-- Right-hand services -->
           <rect x="800" y="56" width="160" height="72" rx="4" class="b"/>
           <text x="880" y="82" text-anchor="middle" class="t-b">Secret scope</text>
-          <text x="880" y="100" text-anchor="middle" class="t-s">admin-password</text>
-          <text x="880" y="115" text-anchor="middle" class="t-s">settings-key</text>
+          <text x="880" y="106" text-anchor="middle" class="t-s">settings-key</text>
           <line x1="800" y1="92" x2="744" y2="92" class="ln" marker-end="url(#a1)"/>
           <text x="772" y="84" text-anchor="middle" class="t-s">env at</text>
           <text x="772" y="108" text-anchor="middle" class="t-s">start</text>
@@ -591,8 +590,8 @@
         <thead><tr><th>What</th><th>Where</th><th>Survives a restart</th></tr></thead>
         <tbody>
           <tr><td>Assessments, stages, artefacts, call audit</td><td>Lakebase, schema <code>policy_red_team</code>, created by the migration runner at boot. Upstream's hard-coded <code>"public".</code> references are pointed at this schema as they are applied</td><td><span class="tag tag-ok">yes</span></td></tr>
-          <tr><td>Admin password</td><td>Secret scope <code>policy-red-team</code>, key <code>admin-password</code>, injected as an environment variable</td><td><span class="tag tag-ok">yes</span></td></tr>
-          <tr><td>Key for settings saved in /admin</td><td>Same scope, key <code>settings-key</code>. The encrypted settings are in Lakebase, the key is not</td><td><span class="tag tag-ok">yes</span></td></tr>
+          <tr><td>Who the admins are</td><td>A workspace group, <code>policy-red-team-admins</code> by default (with SCIM, an Entra ID group). The app checks the signed-in user's groups and remembers the answer for a minute</td><td><span class="tag tag-ok">yes</span></td></tr>
+          <tr><td>Key for settings saved in /admin</td><td>Secret scope <code>policy-red-team</code>, key <code>settings-key</code>. The encrypted settings are in Lakebase, the key is not</td><td><span class="tag tag-ok">yes</span></td></tr>
           <tr><td>Model credentials</td><td>None stored. The platform injects the service principal's client ID and secret; the provider exchanges them for a token and refreshes it a minute before it expires</td><td><span class="tag tag-ok">yes</span></td></tr>
           <tr><td>Keys for sealed runs</td><td>Files on the App's local disk</td><td><span class="tag tag-open">no</span></td></tr>
         </tbody>
@@ -654,7 +653,7 @@
         <ol class="steps">
           <li><code>databricks auth login --host &lt;workspace&gt; --profile &lt;profile&gt;</code></li>
           <li><code>npm run deploy -- &lt;profile&gt;</code>: secrets, build, upload and restart in one go</li>
-          <li>First time only: set a token ceiling in <code>/admin</code>, then grant CAN_USE</li>
+          <li>First time only: add the admins to the admin group, set a token ceiling in <code>/admin</code>, then grant CAN_USE</li>
         </ol>
       </div>
       <div style="display:grid;gap:10px">
@@ -671,8 +670,8 @@
         <thead><tr><th>Principal</th><th>Can</th><th>Granted by</th></tr></thead>
         <tbody>
           <tr><td>A signed-in reader with CAN_USE</td><td>Open the App, submit papers, read and export every assessment</td><td>App permissions (only the deployer at first)</td></tr>
-          <tr><td>Holder of the admin password</td><td>Open <code>/admin</code>: token ceiling, model menu, connection test</td><td><code>init_secrets</code> generates it; read with <code>databricks secrets get-secret</code></td></tr>
-          <tr><td>The App's service principal</td><td>Query one serving endpoint, connect to one Lakebase database, read two secrets</td><td>Resource grants in <code>databricks.yml</code>, applied on deploy</td></tr>
+          <tr><td>A member of the admin group</td><td>Open <code>/admin</code>: token ceiling, model menu, connection test</td><td>Group membership, in Entra ID or the workspace. No password</td></tr>
+          <tr><td>The App's service principal</td><td>Query one serving endpoint, connect to one Lakebase database, read one secret</td><td>Resource grants in <code>databricks.yml</code>, applied on deploy</td></tr>
           <tr><td>Another website</td><td>Nothing that changes state: a cross-site guard refuses any POST without <code>Sec-Fetch-Site: same-origin</code></td><td>The server itself</td></tr>
         </tbody>
       </table>

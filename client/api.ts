@@ -395,6 +395,8 @@ export const admin = {
       claimable: boolean;
       /** True when claiming it also needs POLICY_SETUP_TOKEN, because it is not on loopback. */
       tokenRequired: boolean;
+      /** Set on Databricks Apps when a workspace group, not a password, decides who is an admin. */
+      group?: string;
     }>('/api/admin/status'),
   /**
    * Set this install's first admin password, using the credential it ships with.

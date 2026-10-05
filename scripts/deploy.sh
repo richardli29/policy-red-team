@@ -24,7 +24,6 @@ echo "==> restart onto the new code"
 bundle run policy_red_team
 
 name=$(bundle summary -o json | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(JSON.parse(s).resources.apps.policy_red_team.name))')
-scope=$(bundle validate -o json | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(JSON.parse(s).variables.secret_scope.value))')
 url=$(databricks apps get "$name" -p "$profile" -o json | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(JSON.parse(s).url))')
 
 cat <<EOF
@@ -32,8 +31,9 @@ cat <<EOF
 Deployed: $url
 
 First time only:
-  1. Admin password:  databricks secrets get-secret $scope admin-password -p $profile -o json \\
-                        | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(Buffer.from(JSON.parse(s).value,"base64").toString()))'
-  2. Open $url/admin and set a token ceiling.
-  3. Share it: grant CAN_USE on the app in the Apps UI.
+  1. Put the admins in the workspace group named by admin_group
+     (policy-red-team-admins unless the target changes it). With SCIM from
+     Entra ID, that is an Entra group.
+  2. Open $url/admin as one of them and set a token ceiling.
+  3. Share it: grant CAN_USE on the app in the Apps UI, ideally to a group.
 EOF

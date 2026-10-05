@@ -19,7 +19,8 @@ It is deployed with a [bundle](https://docs.databricks.com/aws/en/dev-tools/bund
 | **The app** | built on your machine and uploaded ready to run |
 | **A Lakebase database** | [Lakebase](https://docs.databricks.com/aws/en/oltp/) Postgres, where the assessments are kept. Created on the first deploy |
 | **A model endpoint** | a [Model Serving](https://docs.databricks.com/aws/en/machine-learning/foundation-model-apis/) chat endpoint, called as the app's own service principal. No API key anywhere |
-| **Two secrets** | the `/admin` password and the settings encryption key, generated for you |
+| **One secret** | the key that encrypts the settings saved in `/admin`, generated for you |
+| **Admins by group** | whoever is in one workspace group can open `/admin`. No password. With users synced from Entra ID, it is an Entra group |
 
 ## Quick start
 
@@ -30,10 +31,10 @@ databricks auth login --host https://<your-workspace>.cloud.databricks.com --pro
 npm run deploy -- <profile>
 ```
 
-`npm run deploy` does steps 2 to 5 below in one go and prints the app's URL and
-how to read the admin password. Run the same command again to deploy a code
-change. The first time, finish with [steps 6 to 8](#deploy-it-step-by-step):
-read the password, set a token ceiling in `/admin`, and share the app.
+`npm run deploy` does steps 2 to 5 below in one go and prints the app's URL. Run
+the same command again to deploy a code change. The first time, finish with
+[steps 6 to 8](#deploy-it-step-by-step): put the admins in the admin group, set
+a token ceiling in `/admin`, and share the app.
 
 ## Before you start
 
@@ -63,8 +64,8 @@ databricks auth login --host https://<your-workspace>.cloud.databricks.com --pro
 npm ci
 ```
 
-**3. Create the secrets**, once per workspace. This makes the secret scope and
-generates the admin password and settings key. Running it again changes nothing:
+**3. Create the secret**, once per workspace. This makes the secret scope and
+generates the settings key. Running it again changes nothing:
 
 ```bash
 databricks bundle run init_secrets -t dev -p <profile>
@@ -83,19 +84,29 @@ databricks bundle deploy -t dev -p <profile>
 databricks bundle run policy_red_team -t dev -p <profile>
 ```
 
-**6. Get the admin password** (step 3 generated it without printing it):
+**6. Choose the admins.** Admins are the members of one workspace group,
+`policy-red-team-admins` by default. Create it and add the admins directly:
 
-```bash
-databricks secrets get-secret policy-red-team admin-password -p <profile> -o json \
-  | python3 -c "import json,sys,base64; print(base64.b64decode(json.load(sys.stdin)['value']).decode())"
-```
+- **Users synced from Entra ID (SCIM):** create the group in Entra, add the
+  admins, and include it in the Databricks provisioning app. It appears in the
+  workspace on the next sync.
+- **Otherwise:** create it in the workspace's admin settings, under Identity
+  and access, then Groups.
 
-**7. Set a spending limit.** Open `<app URL>/admin`, sign in with that password
-and set a token ceiling before anyone runs anything. Without one a run keeps
-spending. See [What it costs](#what-it-costs).
+To use a group with another name, set it when deploying:
+`databricks bundle deploy -t dev -p <profile> --var admin_group="<group name>"`,
+or as `admin_group` in the target. Membership is direct: put people in the
+group itself, not in a group inside it. Changes take effect within a minute,
+with no redeploy.
 
-**8. Share it.** At first only you can open it. Give colleagues `CAN_USE` in the
-Apps UI, or uncomment `permissions` in `databricks.yml` and repeat step 4. See
+**7. Set a spending limit.** As an admin, open `<app URL>/admin` and set a token
+ceiling before anyone runs anything. There is no password: the workspace
+sign-in already says who you are. Without a ceiling a run keeps spending. See
+[What it costs](#what-it-costs).
+
+**8. Share it.** At first only you can open it. Give `CAN_USE` on the app to a
+group (again, an Entra group works) in the Apps UI, or uncomment `permissions`
+in `databricks.yml` and repeat step 4. See
 [app permissions](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/permissions).
 
 To test it, open the app, choose **Assess a paper** and upload a PDF, DOCX or text
@@ -139,7 +150,8 @@ In `databricks.yml`, per target:
 | `app_name` | `policy-red-team` | lower case and hyphens, 26 characters at most |
 | `serving_endpoint` | `databricks-claude-sonnet-5` | the endpoint every model call goes to |
 | `lakebase_project` | `policy-red-team` | created if it does not exist |
-| `secret_scope` | `policy-red-team` | holds `admin-password` and `settings-key` |
+| `secret_scope` | `policy-red-team` | holds `settings-key` |
+| `admin_group` | `policy-red-team-admins` | the workspace group whose members can open `/admin` |
 
 In `app.yaml`, for how the app behaves:
 
@@ -200,6 +212,7 @@ estimate for the whole run. A real policy paper costs more.
 | Deploy fails at "Installing packages" with an `npm error 404` | The repository was deployed, not the staged build. `source_code_path` must be `./.app`, and `bundle deploy` must have run its prebuild. Deploying the repository makes the platform run `npm install` through Databricks' registry mirror, which refuses packages at random |
 | The prebuild fails before anything uploads | Node is missing or older than 22 on this machine, or `npm ci` has not been run |
 | The app shows old behaviour after a deploy | Run `databricks bundle run policy_red_team`. `deploy` only uploads |
+| `/admin` says only members of the admin group can open it | You are not a direct member of `admin_group`, or the Entra sync has not run yet. Add yourself to the group itself (not a nested group) and try again after a minute |
 | The app fails to start after a deploy, and says it cannot read its secrets | Its service principal has lost READ on the scope. Put it back with `databricks secrets put-acl policy-red-team <service principal client ID> READ`. The client ID is in `databricks apps get policy-red-team` |
 | A stage fails with "the model's reply was cut off at its output limit" | The call used its whole output allowance. For Claude that is 48,000 tokens, and a request that was cut off once is given 64,000 on its next attempt (`src/lib/llm/providers/databricks.ts`). If it still fails, the paper needs a model with a larger output limit for that stage |
 | A call error reads "400 status code (no body)" | It should not any more: the provider reshapes Databricks' error body so the endpoint's own message is recorded. If you see it, the endpoint sent a body in a shape nobody has seen yet |
@@ -215,7 +228,7 @@ estimate for the whole run. A real policy paper costs more.
 |---|---|
 | **The database is Lakebase** | An app's filesystem does not survive a restart. `POLICY_DATABASE=lakebase` switches `src/lib/db` from PGlite to a Lakebase pool, whose connection and OAuth password come from the app's `postgres` resource. The tables live in their own schema, `POLICY_PG_SCHEMA`, and the migration runner points upstream's hard-coded `"public".` references at it |
 | **Models are Model Serving** | The `databricks` provider calls `<workspace>/serving-endpoints` with the app's service principal token, refreshed before it expires |
-| **The workspace sign-in is the gate** | Every request has already passed the Databricks login, and `CAN_USE` on the app decides who that is. So `POLICY_ACCESS=open`. `/admin` keeps its own password |
+| **The workspace sign-in is the gate** | Every request has already passed the Databricks login, and `CAN_USE` on the app decides who that is. So `POLICY_ACCESS=open`. `/admin` is for members of `admin_group`, checked against the workspace's own groups |
 | **Nothing is installed on the platform** | `npm run stage:app` builds the client and one minified server bundle, with every dependency inside it, into `.app/`, with a `package.json` that lists none. The bundle is 5.6MB, under the platform's 10MB-per-file limit. It cannot carry PGlite's WebAssembly, which is why the staged build is Lakebase only |
 
 ## How Model Serving differs

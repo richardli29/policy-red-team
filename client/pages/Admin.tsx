@@ -95,8 +95,9 @@ export function Admin() {
               forgotten is the failure this whole page is gated against. */}
           <InsetText>{status.problem}</InsetText>
           <p className="govuk-body">
-            Until then this install uses whatever its environment supplies, which is how it has
-            always worked.
+            {status.group
+              ? 'Ask whoever manages that group to add you if you need to change these settings.'
+              : 'Until then this install uses whatever its environment supplies, which is how it has always worked.'}
           </p>
         </div>
       </div>
@@ -245,9 +246,12 @@ export function Admin() {
             >
               {busy ? 'Trying…' : 'Test the connection'}
             </Button>
-            <Button variant="secondary" disabled={busy} onClick={() => void run(() => admin.signOut(), () => void load())}>
-              Sign out
-            </Button>
+            {/* A group admin is signed in by the workspace; there is no session here to end. */}
+            {status.group ? null : (
+              <Button variant="secondary" disabled={busy} onClick={() => void run(() => admin.signOut(), () => void load())}>
+                Sign out
+              </Button>
+            )}
           </ButtonGroup>
           <p className="govuk-body-s prt-meta">
             The test makes one real call for a single token against whatever is configured now.

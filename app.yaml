@@ -38,11 +38,13 @@ env:
 
   # ── Who can get in ───────────────────────────────────────────────────────
   # The workspace sign-in in front of every Databricks App is the gate, and
-  # CAN_USE on the app decides who passes it. `/admin` keeps its own password.
+  # CAN_USE on the app decides who passes it. `/admin` is for the members of
+  # one workspace group: with SCIM from Entra ID, an Entra group. The bundle
+  # variable `admin_group` sets it at deploy time.
   - name: POLICY_ACCESS
     value: open
-  - name: POLICY_ADMIN_PASSWORD
-    valueFrom: admin-password
+  - name: POLICY_ADMIN_GROUP
+    value: "policy-red-team-admins"
   - name: POLICY_SETTINGS_KEY
     valueFrom: settings-key
   - name: POLICY_OWNER_EMAIL

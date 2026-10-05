@@ -87,10 +87,13 @@ writeFileSync(
   ) + '\n',
 );
 
-const appYaml = readFileSync(path.join(root, 'app.yaml'), 'utf8').replace(
-  /command:\n(?:  - .*\n)+/,
-  'command:\n  - node\n  - dist/server.js\n',
-);
+// THE ADMIN GROUP COMES FROM THE BUNDLE. `app.yaml` cannot read a bundle
+// variable, so the prebuild passes `admin_group` in and it is written here.
+const group = process.env.POLICY_ADMIN_GROUP?.trim();
+if (group && !/^[\w .@-]+$/.test(group)) throw new Error(`POLICY_ADMIN_GROUP has characters a group name should not: ${group}`);
+const appYaml = readFileSync(path.join(root, 'app.yaml'), 'utf8')
+  .replace(/command:\n(?:  - .*\n)+/, 'command:\n  - node\n  - dist/server.js\n')
+  .replace(/(- name: POLICY_ADMIN_GROUP\n    value: ).*\n/, (line, head) => (group ? `${head}"${group}"\n` : line));
 writeFileSync(path.join(out, 'app.yaml'), appYaml);
 
 console.log(`staged ${path.relative(root, out)}/ for databricks bundle deploy`);

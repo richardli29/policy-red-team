@@ -29,6 +29,7 @@ import { isDefaultCredential, passwordProblem } from '$lib/server/credentials';
 import { accessMode, accessModeIsPinned, accessSummary, setAccessMode, type AccessMode } from '$lib/server/reader-access';
 import { chosenEngine, saveSearchConfig, searchDomains, searchIsPinned, searchPlan, tavilyKey, type SearchEngine } from '$lib/server/search';
 import { rateLimit } from '$lib/server/rate-limit';
+import { adminGroup, isGroupAdmin, workspaceUser } from '$lib/server/workspace-admin';
 import { providers, redact, type ProviderConfig } from '$lib/llm/providers';
 import { clearLLMClientCache, resolveProvider } from '$lib/llm/client';
 import { builtInModels, offeredModels, registerProviderModels, tierForCost, type OfferedModel } from '$lib/server/models/catalogue';
@@ -59,6 +60,8 @@ function isSecure(req: IncomingMessage): boolean {
 }
 
 export async function isSignedIn(req: IncomingMessage): Promise<boolean> {
+  // A named admin group replaces the password outright: no cookie, no form.
+  if (adminGroup()) return isGroupAdmin(req);
   return sessionValid(readCookie(req.headers.cookie, ADMIN_COOKIE), await adminCredential());
 }
 
@@ -71,6 +74,18 @@ export async function isSignedIn(req: IncomingMessage): Promise<boolean> {
  * credentials to protect through this route.
  */
 export async function adminStatus(req: IncomingMessage) {
+  const group = adminGroup();
+  if (group) {
+    const signedIn = await isGroupAdmin(req);
+    return {
+      available: signedIn,
+      problem: signedIn ? null : `Only members of the ${group} group can open this page.${workspaceUser(req) ? '' : ' Your sign-in did not reach the app.'}`,
+      signedIn,
+      claimable: false,
+      tokenRequired: false,
+      group,
+    };
+  }
   const credential = await adminCredential();
   const signedIn = sessionValid(readCookie(req.headers.cookie, ADMIN_COOKIE), credential);
   if (credential) return { available: true, problem: null, signedIn, claimable: false, tokenRequired: false };
@@ -132,6 +147,10 @@ export async function handleAdmin(
    * minted under a guessable credential is the thing this whole file exists to
    * prevent.
    */
+  if (adminGroup() && ['claim', 'session', 'password'].includes(segments[0] ?? '') && method === 'POST') {
+    throw new HttpError(409, `This app's admins are the members of the ${adminGroup()} group. There is no password to use.`);
+  }
+
   if (segments.length === 1 && segments[0] === 'claim' && method === 'POST') {
     const limit = rateLimit('admin-claim', { capacity: 5, refillPerSecond: 1 / 60 });
     if (!limit.allowed) {
