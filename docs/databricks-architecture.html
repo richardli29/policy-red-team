@@ -590,7 +590,7 @@
         <thead><tr><th>What</th><th>Where</th><th>Survives a restart</th></tr></thead>
         <tbody>
           <tr><td>Assessments, stages, artefacts, call audit</td><td>Lakebase, schema <code>policy_red_team</code>, created by the migration runner at boot. Upstream's hard-coded <code>"public".</code> references are pointed at this schema as they are applied</td><td><span class="tag tag-ok">yes</span></td></tr>
-          <tr><td>Who the admins are</td><td>A workspace group, <code>policy-red-team-admins</code> by default (with SCIM, an Entra ID group). The app checks the signed-in user's groups and remembers the answer for a minute</td><td><span class="tag tag-ok">yes</span></td></tr>
+          <tr><td>Who the admins are</td><td>A workspace group, <code>policy-red-team-admins</code> by default (with SCIM, an Entra ID group). The app checks the signed-in user's groups and remembers the answer for a minute, so a change takes effect within a few minutes</td><td><span class="tag tag-ok">yes</span></td></tr>
           <tr><td>Key for settings saved in /admin</td><td>Secret scope <code>policy-red-team</code>, key <code>settings-key</code>. The encrypted settings are in Lakebase, the key is not</td><td><span class="tag tag-ok">yes</span></td></tr>
           <tr><td>Model credentials</td><td>None stored. The platform injects the service principal's client ID and secret; the provider exchanges them for a token and refreshes it a minute before it expires</td><td><span class="tag tag-ok">yes</span></td></tr>
           <tr><td>Keys for sealed runs</td><td>Files on the App's local disk</td><td><span class="tag tag-open">no</span></td></tr>

@@ -96,7 +96,7 @@ databricks bundle run policy_red_team -t dev -p <profile>
 To use a group with another name, set it when deploying:
 `databricks bundle deploy -t dev -p <profile> --var admin_group="<group name>"`,
 or as `admin_group` in the target. Membership is direct: put people in the
-group itself, not in a group inside it. Changes take effect within a minute,
+group itself, not in a group inside it. Changes take effect within a few minutes,
 with no redeploy.
 
 **7. Set a spending limit.** As an admin, open `<app URL>/admin` and set a token
@@ -212,7 +212,7 @@ estimate for the whole run. A real policy paper costs more.
 | Deploy fails at "Installing packages" with an `npm error 404` | The repository was deployed, not the staged build. `source_code_path` must be `./.app`, and `bundle deploy` must have run its prebuild. Deploying the repository makes the platform run `npm install` through Databricks' registry mirror, which refuses packages at random |
 | The prebuild fails before anything uploads | Node is missing or older than 22 on this machine, or `npm ci` has not been run |
 | The app shows old behaviour after a deploy | Run `databricks bundle run policy_red_team`. `deploy` only uploads |
-| `/admin` says only members of the admin group can open it | You are not a direct member of `admin_group`, or the Entra sync has not run yet. Add yourself to the group itself (not a nested group) and try again after a minute |
+| `/admin` says only members of the admin group can open it | You are not a direct member of `admin_group`, or the Entra sync has not run yet. Add yourself to the group itself (not a nested group) and try again after a few minutes |
 | The app fails to start after a deploy, and says it cannot read its secrets | Its service principal has lost READ on the scope. Put it back with `databricks secrets put-acl policy-red-team <service principal client ID> READ`. The client ID is in `databricks apps get policy-red-team` |
 | A stage fails with "the model's reply was cut off at its output limit" | The call used its whole output allowance. For Claude that is 48,000 tokens, and a request that was cut off once is given 64,000 on its next attempt (`src/lib/llm/providers/databricks.ts`). If it still fails, the paper needs a model with a larger output limit for that stage |
 | A call error reads "400 status code (no body)" | It should not any more: the provider reshapes Databricks' error body so the endpoint's own message is recorded. If you see it, the endpoint sent a body in a shape nobody has seen yet |
