@@ -3,9 +3,10 @@
 Reads a policy paper as an adversary would: who gains if it fails, and what they
 can do about it while staying compliant. This branch runs it as a
 [Databricks App](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/),
-with its model calls going to
-[Model Serving](https://docs.databricks.com/aws/en/machine-learning/foundation-model-apis/)
-and its data kept in [Lakebase](https://docs.databricks.com/aws/en/oltp/).
+with its model calls going through
+[Unity Gateway](https://docs.databricks.com/aws/en/ai-gateway/) to a
+[Foundation Model API](https://docs.databricks.com/aws/en/machine-learning/foundation-model-apis/)
+model, and its data kept in [Lakebase](https://docs.databricks.com/aws/en/oltp/).
 
 It is **not an assurance review**. A clean report means it found nothing, which
 is not the same as a policy being fine. Every profile it writes is a hypothesis
@@ -18,7 +19,7 @@ It is deployed with a [bundle](https://docs.databricks.com/aws/en/dev-tools/bund
 |---|---|
 | **The app** | built on your machine and uploaded ready to run |
 | **A Lakebase database** | [Lakebase](https://docs.databricks.com/aws/en/oltp/) Postgres, where the assessments are kept. Created on the first deploy |
-| **A model endpoint** | a [Model Serving](https://docs.databricks.com/aws/en/machine-learning/foundation-model-apis/) chat endpoint, called as the app's own service principal. No API key anywhere |
+| **A model, through Unity Gateway** | `system.ai.claude-sonnet-5` by default, called as the app's own service principal. No API key anywhere. Access, rate limits, usage tracking and guardrails are governed in Unity Catalog |
 | **One secret** | the key that encrypts the settings saved in `/admin`, generated for you |
 | **Admins by group** | whoever is in one workspace group can open `/admin`. No password. With users synced from Entra ID, it is an Entra group |
 
@@ -43,8 +44,14 @@ You need:
 - **The Databricks CLI**, v1.17 or newer. [Install it](https://docs.databricks.com/aws/en/dev-tools/cli/install).
 - **Node 22.23.2 or newer** on your machine (`node --version`). The app is built
   here, not on the platform.
-- **In the workspace:** Databricks Apps, Lakebase, and a chat endpoint you can
-  query. Check with `databricks serving-endpoints list -p <profile>`.
+- **In the workspace:** Databricks Apps, Lakebase, and Unity Gateway with the
+  model you want. Check the model answers with
+  `databricks api post /ai-gateway/mlflow/v1/chat/completions -p <profile> --json '{"model":"system.ai.claude-sonnet-5","messages":[{"role":"user","content":"ok?"}],"max_tokens":5}'`.
+- **The app's service principal needs `EXECUTE` on the model service.** For a
+  `system.ai` model, `account users` usually has it already, which covers the
+  app. If not, a Unity Catalog admin grants it after the first deploy (the
+  principal's ID is in `databricks apps get policy-red-team`). An app cannot
+  declare this as a bundle resource yet.
 - **Permission to create** an app, a Lakebase project and a secret scope.
 
 ## Deploy it, step by step
@@ -138,7 +145,7 @@ targets:
       host: https://<workspace>.cloud.databricks.com
       root_path: /Workspace/Shared/.bundle/${bundle.name}/${bundle.target}
     variables:
-      serving_endpoint: databricks-claude-sonnet-5
+      model: system.ai.claude-sonnet-5
 ```
 
 ## What you can change
@@ -148,7 +155,7 @@ In `databricks.yml`, per target:
 | Variable | Default | |
 |---|---|---|
 | `app_name` | `policy-red-team` | lower case and hyphens, 26 characters at most |
-| `serving_endpoint` | `databricks-claude-sonnet-5` | the endpoint every model call goes to |
+| `model` | `system.ai.claude-sonnet-5` | the model every call goes to: a Unity Gateway model service (`catalog.schema.name`), or a serving endpoint name |
 | `lakebase_project` | `policy-red-team` | created if it does not exist |
 | `secret_scope` | `policy-red-team` | holds `settings-key` |
 | `admin_group` | `policy-red-team-admins` | the workspace group whose members can open `/admin` |
@@ -165,33 +172,35 @@ In `app.yaml`, for how the app behaves:
 **Parallel calls within a run** are chosen per submission on the form: "Parallel model
 calls", 1 to 6, four by default. Upstream measured four as the point past which more
 stop helping. The tokens spent are the same at any setting; only the time changes. The
-endpoint sees up to `POLICY_WORKERS` times that number of calls at once.
+model sees up to `POLICY_WORKERS` times that number of calls at once.
 
-**Changing the model.** Change `serving_endpoint`, then deploy and run. These
-endpoint families have been tested and all return usable JSON: Claude, GPT-5,
-gpt-oss, Gemini, Llama, Qwen, GLM, DeepSeek and Kimi. Claude and Gemini need
-their replies adjusted, which the provider does. See [How Model Serving
-differs](#how-model-serving-differs).
+**Changing the model.** Set `model`, then deploy again: for example
+`BUNDLE_VAR_model=system.ai.gpt-5-5 npm run deploy -- <profile>`. A name with
+three dotted parts goes through Unity Gateway; anything else is treated as a
+serving endpoint name. These families have been tested and all return usable
+JSON: Claude, GPT-5, gpt-oss, Gemini, Llama, Qwen, GLM, DeepSeek and Kimi.
+Claude and Gemini need their replies adjusted, which the provider does. See
+[How the models differ](#how-the-models-differ).
 
 ## What it costs
 
-A run is billed to the workspace as Model Serving usage. For a sense of scale,
+A run is billed to the workspace as Foundation Model API usage. For a sense of scale,
 a run on a one-page sample document with Claude Sonnet 5 had used about 1.1
 million tokens by stage 9 of 18. That was already more than the app's own
 estimate for the whole run. A real policy paper costs more.
 
 - **Prompt caching is off by default.** The pipeline was tuned on a service
-  that caches the shared context between calls. Claude on Model Serving accepts
+  that caches the shared context between calls. Claude on Databricks accepts
   cache markers, and `POLICY_DATABRICKS_PROMPT_CACHE=1` sends them at the
   prefix each call shares with the last. But a probe found only 1 cache read in
   4 identical calls, apparently because requests are spread across backends,
   and a cache write costs more than a plain read. Try it on one run and compare
   the "served from cache" figure (now reported truthfully) before leaving it on.
 - **Set a token ceiling in `/admin`.** It is the one control inside the app.
-- **Put limits on the endpoint.** Its [Unity Gateway](https://docs.databricks.com/aws/en/ai-gateway/)
-  settings in the Serving UI give rate limits, usage tracking and inference
-  tables. Worth doing before sharing the app: a single run can make hundreds of
-  calls.
+- **Put limits on the model in Unity Gateway.** [Rate limits](https://docs.databricks.com/aws/en/ai-gateway/rate-limits),
+  usage tracking and inference tables are set there. Worth doing before sharing
+  the app: a single run can make hundreds of calls. Inference tables would store
+  the full text of every paper sent, so decide on those deliberately.
 - **Cancel runs you do not need** from the assessment page. A cancelled run
   stops spending straight away.
 
@@ -219,7 +228,9 @@ estimate for the whole run. A real policy paper costs more.
 | You want to see what a run is doing | `databricks apps logs policy-red-team --follow` shows one `serving:` line per model call: seconds, tokens in and out, cached, and how the reply finished |
 | Submitting says "Three analyses are already active" | The store's limit per owner. Every reader on the app is the same owner, so cancel or wait for one of the three |
 | The app shows CRASHED after a restart | Check `databricks apps logs` for the cause. A transient Lakebase credential timeout used to crash it; the pool now logs and retries those. `databricks bundle run policy_red_team` starts it again |
-| Stage calls fail with "the model returned malformed JSON" | The endpoint is replying in a shape the provider does not yet handle. Try a different family in `serving_endpoint` and report which endpoint it was |
+| Stage calls fail with "the model returned malformed JSON" | The model is replying in a shape the provider does not yet handle. Try a different family in `model` and report which one it was |
+| Model calls fail with `PERMISSION_DENIED` or `does not exist` | The app's service principal lacks `EXECUTE` on the model service, or the model is not offered in this region. Check with the `ai-gateway` command in [Before you start](#before-you-start) |
+| A call fails naming a policy, such as `POLICY_EVALUATION_FAILED` | A Unity Gateway service policy (a guardrail) on the model refused or timed out. Seen once on 2026-10-06 as a timeout that cleared on retry. The workspace admin owns these |
 | A script or `curl` gets "This request came from another website" | That is the cross-site guard. A browser sends `Sec-Fetch-Site: same-origin` and is let through; a script has to send the same header |
 
 ## How it differs from running it locally
@@ -227,13 +238,14 @@ estimate for the whole run. A real policy paper costs more.
 | | |
 |---|---|
 | **The database is Lakebase** | An app's filesystem does not survive a restart. `POLICY_DATABASE=lakebase` switches `src/lib/db` from PGlite to a Lakebase pool, whose connection and OAuth password come from the app's `postgres` resource. The tables live in their own schema, `POLICY_PG_SCHEMA`, and the migration runner points upstream's hard-coded `"public".` references at it |
-| **Models are Model Serving** | The `databricks` provider calls `<workspace>/serving-endpoints` with the app's service principal token, refreshed before it expires |
+| **Models go through Unity Gateway** | The `databricks` provider calls `<workspace>/ai-gateway/mlflow/v1` with the model service's name, as the app's service principal, with a token refreshed before it expires. A serving endpoint name still works, at `<workspace>/serving-endpoints` |
 | **The workspace sign-in is the gate** | Every request has already passed the Databricks login, and `CAN_USE` on the app decides who that is. So `POLICY_ACCESS=open`. `/admin` is for members of `admin_group`, checked against the workspace's own groups |
 | **Nothing is installed on the platform** | `npm run stage:app` builds the client and one minified server bundle, with every dependency inside it, into `.app/`, with a `package.json` that lists none. The bundle is 5.6MB, under the platform's 10MB-per-file limit. It cannot carry PGlite's WebAssembly, which is why the staged build is Lakebase only |
 
-## How Model Serving differs
+## How the models differ
 
-Measured against the endpoints in a workspace on 2026-09-24, and handled in
+Measured against serving endpoints on 2026-09-24, and confirmed the same through
+Unity Gateway on 2026-10-06. Handled in
 `src/lib/llm/providers/databricks.ts`:
 
 - **Claude refuses `response_format: json_object`.** The provider drops it.

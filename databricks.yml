@@ -37,9 +37,12 @@ variables:
   app_name:
     description: The app's name; lower case, hyphens, 26 characters at most
     default: policy-red-team
-  serving_endpoint:
-    description: The chat endpoint every model call goes to
-    default: databricks-claude-sonnet-5
+  model:
+    description: >-
+      The model every call goes to: a Unity Gateway model service
+      (catalog.schema.name, e.g. system.ai.claude-sonnet-5), or a serving
+      endpoint name
+    default: system.ai.claude-sonnet-5
   lakebase_project:
     description: Lakebase Autoscaling project ID, created if it does not exist
     default: policy-red-team
@@ -53,7 +56,7 @@ variables:
 experimental:
   scripts:
     # Build here, install nothing there. See `scripts/stage-app.mjs` for why.
-    prebuild: POLICY_ADMIN_GROUP='${var.admin_group}' npm run stage:app
+    prebuild: POLICY_MODEL='${var.model}' POLICY_ADMIN_GROUP='${var.admin_group}' npm run stage:app
 
 scripts:
   init_secrets:
@@ -98,10 +101,6 @@ resources:
       lifecycle:
         started: true
       resources:
-        - name: serving-endpoint
-          serving_endpoint:
-            name: ${var.serving_endpoint}
-            permission: CAN_QUERY
         # A new project comes with a `production` branch and a
         # `databricks-postgres` database; the reference to the project resource
         # is what makes the bundle create it before the app.
@@ -133,4 +132,4 @@ targets:
   #     host: https://<workspace>.cloud.databricks.com
   #     root_path: /Workspace/Shared/.bundle/${bundle.name}/${bundle.target}
   #   variables:
-  #     serving_endpoint: databricks-claude-sonnet-5
+  #     model: system.ai.claude-sonnet-5

@@ -4,21 +4,31 @@ import { longRunningTransport } from './transport';
 import type { CatalogueEntry, ProviderConfig, ProviderDefinition } from './types';
 
 /**
- * DATABRICKS MODEL SERVING, through the workspace's AI Gateway.
+ * DATABRICKS FOUNDATION MODELS, through Unity Gateway.
  *
- * Foundation Model APIs and any external model registered in the workspace are
- * served behind one OpenAI-compatible surface at `<workspace>/serving-endpoints`,
- * where the MODEL IS THE ENDPOINT NAME — `databricks-claude-sonnet-4-5`, not a
- * vendor slug. Rate limits, usage tracking, guardrails and inference tables are
- * configured on the endpoint, in the workspace, not here: this module only has
- * to arrive with a credential the endpoint's permissions will accept.
+ * TWO SURFACES, chosen by the shape of the model name:
+ *
+ *   system.ai.claude-sonnet-5   A Unity Gateway model service: a Unity Catalog
+ *                               securable, three dotted parts, called at
+ *                               `<workspace>/ai-gateway/mlflow/v1`. Access is
+ *                               EXECUTE on the service; rate limits, usage
+ *                               tracking, inference tables and service policies
+ *                               are Unity Gateway's. This is the default.
+ *   databricks-claude-sonnet-5  A workspace serving endpoint, called at
+ *                               `<workspace>/serving-endpoints`, where the model
+ *                               is the endpoint name and access is CAN_QUERY.
+ *
+ * Both are OpenAI-compatible and, measured on 2026-10-06, behave identically
+ * for Claude: JSON mode refused, JSON fenced, errors as `{error_code,
+ * message}`. So everything below applies to either; only the base URL differs.
+ * This module only has to arrive with a credential the service will accept.
  *
  * TWO WAYS IN, and the first needs nothing typed:
  *
  *   service-principal   OAuth client credentials. Inside Databricks Apps the
  *                       platform injects `DATABRICKS_CLIENT_ID` and
  *                       `DATABRICKS_CLIENT_SECRET` for the app's own principal,
- *                       and granting that principal CAN_QUERY on the endpoint is
+ *                       and granting that principal EXECUTE on the model service (or CAN_QUERY on an endpoint) is
  *                       the whole of the access story.
  *   token               A personal access token, for running this on a laptop
  *                       against a workspace. Not for a deployment: it is a
@@ -102,12 +112,24 @@ export function databricksToken(config: ProviderConfig): string | (() => Promise
   };
 }
 
+/** Unity Gateway's OpenAI-compatible surface, for a model service. */
+export const UNITY_GATEWAY_PATH = '/ai-gateway/mlflow/v1';
+
+/** A Unity Catalog name has three dotted parts; an endpoint name has none. */
+export function isModelService(model: string | undefined): boolean {
+  return /^[^.\s]+\.[^.\s]+\.[^.\s]+$/.test(model?.trim() ?? '');
+}
+
+export function baseUrlFor(host: string, model: string | undefined): string {
+  return isModelService(model) ? `${host}${UNITY_GATEWAY_PATH}` : `${host}/serving-endpoints`;
+}
+
 export const databricks: ProviderDefinition = {
   id: 'databricks',
-  label: 'Databricks Model Serving',
+  label: 'Databricks (Unity Gateway)',
   blurb:
-    'A model served in your Databricks workspace — a Foundation Model API endpoint or an external model behind AI Gateway. Usage, rate limits and guardrails are set on the endpoint, and calls bill to the workspace.',
-  egress: ['your Databricks workspace host (model serving, and its OAuth token endpoint)'],
+    'A foundation model in your Databricks workspace, through Unity Gateway: a system.ai model, a model service of your own, or a serving endpoint. Access, rate limits, usage tracking and guardrails are governed in Unity Catalog, and calls bill to the workspace.',
+  egress: ['your Databricks workspace host (Unity Gateway or model serving, and its OAuth token endpoint)'],
   fields: [
     {
       name: 'host',
@@ -117,9 +139,9 @@ export const databricks: ProviderDefinition = {
     },
     {
       name: 'model',
-      label: 'Serving endpoint',
-      hint: 'The endpoint name, exactly as the Serving page shows it — for example databricks-claude-sonnet-4-5.',
-      placeholder: 'databricks-claude-sonnet-4-5',
+      label: 'Model',
+      hint: 'A Unity Gateway model service such as system.ai.claude-sonnet-5, or a serving endpoint name such as databricks-claude-sonnet-5.',
+      placeholder: 'system.ai.claude-sonnet-5',
     },
     {
       name: 'authMode',
@@ -156,7 +178,7 @@ export const databricks: ProviderDefinition = {
   problem: (config) => {
     if (!config.host?.trim()) return 'Say which workspace.';
     if (!normaliseHost(config.host)) return 'The workspace URL has to be https.';
-    if (!config.model?.trim()) return 'Say which serving endpoint to call.';
+    if (!config.model?.trim()) return 'Say which model to call.';
     if (mode(config) === 'token') return config.token?.trim() ? null : 'Put an access token in.';
     if (!config.clientId?.trim()) return 'Put the service principal’s client ID in.';
     if (!config.clientSecret?.trim()) return 'Put the service principal’s client secret in.';
@@ -171,7 +193,7 @@ export const databricks: ProviderDefinition = {
     const transport = longRunningTransport();
     return adaptParameters(
       new OpenAI({
-        baseURL: `${normaliseHost(config.host)}/serving-endpoints`,
+        baseURL: baseUrlFor(normaliseHost(config.host)!, config.model),
         apiKey: databricksToken(config),
         ...transport,
         fetch: readableErrors(transport.fetch),
@@ -186,7 +208,9 @@ export const databricks: ProviderDefinition = {
           {
             id: config.model.trim(),
             name: config.model.trim(),
-            note: 'Your serving endpoint. Whatever model is behind it is what answers.',
+            note: isModelService(config.model)
+              ? 'Through Unity Gateway. The model service decides what answers.'
+              : 'Your serving endpoint. Whatever model is behind it is what answers.',
           },
         ]
       : [],
@@ -314,8 +338,9 @@ export function readableErrors(inner: typeof globalThis.fetch): typeof globalThi
  * 400 still gets ONE blind retry per field, remembered for the life of this
  * client.
  */
-const REASONING_FAMILIES = /(^|[-/])(gpt-5|gpt-oss|o\d)/i;
-const NO_JSON_MODE = /(^|[-/])claude/i;
+// `.` too: a Unity Gateway name is `system.ai.claude-sonnet-5`.
+const REASONING_FAMILIES = /(^|[-/.])(gpt-5|gpt-oss|o\d)/i;
+const NO_JSON_MODE = /(^|[-/.])claude/i;
 const CLAUDE = NO_JSON_MODE;
 export const CLAUDE_MAX_TOKENS = 48_000;
 /** ~580 seconds at the ~110 tokens a second measured on the first real runs. */

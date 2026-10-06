@@ -26,15 +26,17 @@ env:
   - name: POLICY_PG_SCHEMA
     value: policy_red_team
 
-  # ── Models: Databricks Model Serving, as the app's own service principal ───
+  # ── Models: Unity Gateway, as the app's own service principal ────────────
   # DATABRICKS_HOST, DATABRICKS_CLIENT_ID and DATABRICKS_CLIENT_SECRET are
-  # injected by the platform. The endpoint name comes from the resource.
+  # injected by the platform. The model is the bundle variable `model`,
+  # written in at deploy time: a Unity Gateway model service such as
+  # system.ai.claude-sonnet-5, or a serving endpoint name.
   - name: POLICY_PROVIDERS
     value: databricks
   - name: POLICY_PROVIDER
     value: databricks
   - name: POLICY_DATABRICKS_ENDPOINT
-    valueFrom: serving-endpoint
+    value: "system.ai.claude-sonnet-5"
 
   # ── Who can get in ───────────────────────────────────────────────────────
   # The workspace sign-in in front of every Databricks App is the gate, and

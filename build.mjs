@@ -166,6 +166,7 @@ const ENDPOINTS = [
   // Databricks Model Serving: the chat surface and the OAuth token grant. The
   // workspace host is the reader's own, so the paths are what can be grepped.
   '/serving-endpoints',
+  '/ai-gateway/mlflow',
   '/oidc/v1/token',
 ];
 for (const [name, source] of [['cli-fixture.js', fixture], ['server-fixture.js', fixtureServer]]) {

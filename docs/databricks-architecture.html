@@ -364,7 +364,7 @@
     <p>Everything a reader touches is one process inside one App. The platform puts the workspace sign-in in front of it and hands it credentials at start-up. The process keeps no state on its own disk, because the App's filesystem is wiped on every restart.</p>
     <figure>
       <div class="diagram">
-        <svg viewBox="0 0 980 470" role="img" aria-label="A reader's browser reaches the app through the Databricks Apps proxy, which enforces the workspace sign-in. Inside the app one Node process serves the client, runs the worker and calls Model Serving and Lakebase using the app's service principal. Secrets are injected as environment variables at start.">
+        <svg viewBox="0 0 980 470" role="img" aria-label="A reader's browser reaches the app through the Databricks Apps proxy, which enforces the workspace sign-in. Inside the app one Node process serves the client, runs the worker and calls Unity Gateway and Lakebase using the app's service principal. Secrets are injected as environment variables at start.">
           <defs>
             <marker id="a1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah"/></marker>
             <marker id="a1acc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah-acc"/></marker>
@@ -432,11 +432,11 @@
           <text x="766" y="276" class="t-s">cached</text>
 
           <rect x="800" y="276" width="160" height="72" rx="4" class="b-key"/>
-          <text x="880" y="300" text-anchor="middle" class="t-b">Model Serving</text>
-          <text x="880" y="318" text-anchor="middle" class="t-s">Unity Gateway</text>
+          <text x="880" y="300" text-anchor="middle" class="t-b">Unity Gateway</text>
+          <text x="880" y="318" text-anchor="middle" class="t-s">system.ai</text>
           <text x="880" y="334" text-anchor="middle" class="t-acc">claude-sonnet-5</text>
           <line x1="720" y1="316" x2="796" y2="316" class="ln-acc" marker-end="url(#a1acc)"/>
-          <text x="758" y="336" text-anchor="middle" class="t-acc">CAN_QUERY</text>
+          <text x="758" y="336" text-anchor="middle" class="t-acc">EXECUTE</text>
 
           <rect x="800" y="366" width="160" height="72" rx="4" class="b"/>
           <text x="880" y="390" text-anchor="middle" class="t-b">Lakebase</text>
@@ -446,7 +446,7 @@
           <text x="758" y="378" text-anchor="middle" class="t-s">SQL</text>
         </svg>
       </div>
-      <figcaption>Readers connect over HTTPS, and Databricks Apps handles the sign-in, the encryption and the network in front of the app, so none of it needs setting up. The only hop out of the App is to workspace services: the OAuth token endpoint, Model Serving and Lakebase. Each is reached as the App's own service principal, which the bundle grants exactly the permission it needs. Web research is switched off (<code>POLICY_SEARCH=none</code>), so nothing leaves the workspace.</figcaption>
+      <figcaption>Readers connect over HTTPS, and Databricks Apps handles the sign-in, the encryption and the network in front of the app, so none of it needs setting up. The only hop out of the App is to workspace services: the OAuth token endpoint, Unity Gateway and Lakebase. Each is reached as the App's own service principal. The bundle grants Lakebase and the secret; the model needs <code>EXECUTE</code> on its model service, which <code>account users</code> holds by default for <code>system.ai</code>. Web research is switched off (<code>POLICY_SEARCH=none</code>), so nothing leaves the workspace.</figcaption>
     </figure>
   </section>
   <section id="run">
@@ -455,7 +455,7 @@
     <p>An assessment is a queue of eighteen stages kept in Lakebase. Two worker loops (<code>POLICY_WORKERS</code>) each claim one stage at a time, so two documents can be in progress together. Within a stage, calls run four at a time by default, chosen on the submit form. Because every step is a row in Postgres, a restart loses at most the call in flight, and the stopping instance hands its claims straight back to the queue.</p>
     <figure>
       <div class="diagram">
-        <svg viewBox="0 0 980 560" role="img" aria-label="Sequence of a run: the browser uploads a paper, the server stores it and queues stage one in Lakebase, the worker claims each stage with a 60 second lease, calls Model Serving, writes artefacts, and a follower reads the run's state every five seconds and tells the browser over server-sent events.">
+        <svg viewBox="0 0 980 560" role="img" aria-label="Sequence of a run: the browser uploads a paper, the server stores it and queues stage one in Lakebase, the worker claims each stage with a 60 second lease, calls Unity Gateway, writes artefacts, and a follower reads the run's state every five seconds and tells the browser over server-sent events.">
           <defs>
             <marker id="a2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah"/></marker>
             <marker id="a2acc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah-acc"/></marker>
@@ -464,7 +464,7 @@
           <text x="290" y="30" text-anchor="middle" class="t-lane">Web server</text>
           <text x="490" y="30" text-anchor="middle" class="t-lane">Worker</text>
           <text x="690" y="30" text-anchor="middle" class="t-lane">Lakebase</text>
-          <text x="890" y="30" text-anchor="middle" class="t-lane">Model Serving</text>
+          <text x="890" y="30" text-anchor="middle" class="t-lane">Unity Gateway</text>
           <line x1="90" y1="42" x2="90" y2="540" class="lane"/>
           <line x1="290" y1="42" x2="290" y2="540" class="lane"/>
           <line x1="490" y1="42" x2="490" y2="540" class="lane"/>
@@ -522,7 +522,7 @@
   </section>
   <section id="models">
     <span class="eyebrow">Model calls</span>
-    <h2>How a pipeline request reaches Model Serving</h2>
+    <h2>How a pipeline request reaches the model</h2>
     <p>The analysis pipeline was written for an OpenRouter-shaped API and is kept byte-identical to its upstream. Everything Databricks-specific lives in one fork-written provider module that sits underneath it, so the pipeline never learns which service answered.</p>
     <figure>
       <div class="diagram">
@@ -548,10 +548,10 @@
           <text x="390" y="202" text-anchor="middle" class="t-s">unwrap fenced JSON</text>
 
           <rect x="570" y="70" width="170" height="110" rx="4" class="b"/>
-          <text x="655" y="96" text-anchor="middle" class="t-b">/serving-endpoints</text>
-          <text x="655" y="118" text-anchor="middle" class="t-s">bearer: SP token</text>
-          <text x="655" y="134" text-anchor="middle" class="t-s">Unity Gateway limits</text>
-          <text x="655" y="150" text-anchor="middle" class="t-s">and usage tracking</text>
+          <text x="655" y="96" text-anchor="middle" class="t-b">Unity Gateway</text>
+          <text x="655" y="118" text-anchor="middle" class="t-s">/ai-gateway/mlflow/v1</text>
+          <text x="655" y="134" text-anchor="middle" class="t-s">bearer: SP token</text>
+          <text x="655" y="150" text-anchor="middle" class="t-s">limits, usage, policies</text>
 
           <rect x="800" y="70" width="160" height="110" rx="4" class="b"/>
           <text x="880" y="96" text-anchor="middle" class="t-b">Foundation model</text>
@@ -567,7 +567,7 @@
           <text x="250" y="200" text-anchor="middle" class="t-s">plain JSON string</text>
         </svg>
       </div>
-      <figcaption>Model Serving reports every parameter refusal as <code>400 status code (no body)</code>, so the provider cannot read why a request was refused. It works from a measured list of what each family accepts, and retries once without a field the endpoint may have rejected.</figcaption>
+      <figcaption>A model name with three dotted parts, such as <code>system.ai.claude-sonnet-5</code>, goes to Unity Gateway; a plain endpoint name still goes to <code>/serving-endpoints</code>. Both send errors as <code>{error_code, message}</code>, which the OpenAI SDK would report as <code>400 status code (no body)</code>, so the provider reshapes them and drops a field only when the error names it.</figcaption>
     </figure>
 
     <div class="table-wrap">
@@ -623,7 +623,7 @@
           <text x="346" y="88" class="t-s">runs stage:app as a prebuild hook</text>
           <text x="346" y="110" class="t">uploads .app/ to workspace files</text>
           <text x="346" y="130" class="t">creates the Lakebase project</text>
-          <text x="346" y="150" class="t">grants the app's SP: CAN_QUERY,</text>
+          <text x="346" y="150" class="t">grants the app's SP:</text>
           <text x="346" y="168" class="t">CAN_CONNECT_AND_CREATE, secret READ</text>
           <text x="346" y="192" class="t-s">starts the app if it is stopped</text>
 
@@ -671,7 +671,7 @@
         <tbody>
           <tr><td>A signed-in reader with CAN_USE</td><td>Open the App, submit papers, read and export every assessment</td><td>App permissions (only the deployer at first)</td></tr>
           <tr><td>A member of the admin group</td><td>Open <code>/admin</code>: token ceiling, model menu, connection test</td><td>Group membership, in Entra ID or the workspace. No password</td></tr>
-          <tr><td>The App's service principal</td><td>Query one serving endpoint, connect to one Lakebase database, read one secret</td><td>Resource grants in <code>databricks.yml</code>, applied on deploy</td></tr>
+          <tr><td>The App's service principal</td><td>Call one model through Unity Gateway, connect to one Lakebase database, read one secret</td><td>Lakebase and the secret: resource grants in <code>databricks.yml</code>. The model: <code>EXECUTE</code> on the model service in Unity Catalog</td></tr>
           <tr><td>Another website</td><td>Nothing that changes state: a cross-site guard refuses any POST without <code>Sec-Fetch-Site: same-origin</code></td><td>The server itself</td></tr>
         </tbody>
       </table>

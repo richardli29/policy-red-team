@@ -97,13 +97,20 @@ writeFileSync(
   ) + '\n',
 );
 
-// THE ADMIN GROUP COMES FROM THE BUNDLE. `app.yaml` cannot read a bundle
-// variable, so the prebuild passes `admin_group` in and it is written here.
-const group = process.env.POLICY_ADMIN_GROUP?.trim();
-if (group && !/^[\w .@-]+$/.test(group)) throw new Error(`POLICY_ADMIN_GROUP has characters a group name should not: ${group}`);
-const appYaml = readFileSync(path.join(root, 'app.yaml'), 'utf8')
-  .replace(/command:\n(?:  - .*\n)+/, 'command:\n  - node\n  - dist/server.js\n')
-  .replace(/(- name: POLICY_ADMIN_GROUP\n    value: ).*\n/, (line, head) => (group ? `${head}"${group}"\n` : line));
+// THE MODEL AND THE ADMIN GROUP COME FROM THE BUNDLE. `app.yaml` cannot read a
+// bundle variable, so the prebuild passes `model` and `admin_group` in and
+// they are written here. Unset, the repository's own values stand.
+const fromBundle = { POLICY_DATABRICKS_ENDPOINT: process.env.POLICY_MODEL, POLICY_ADMIN_GROUP: process.env.POLICY_ADMIN_GROUP };
+let appYaml = readFileSync(path.join(root, 'app.yaml'), 'utf8')
+  .replace(/command:\n(?:  - .*\n)+/, 'command:\n  - node\n  - dist/server.js\n');
+for (const [name, raw] of Object.entries(fromBundle)) {
+  const value = raw?.trim();
+  if (!value) continue;
+  if (!/^[\w .@-]+$/.test(value)) throw new Error(`${name} has characters it should not: ${value}`);
+  const line = new RegExp(`(- name: ${name}\\n    value: ).*\\n`);
+  if (!line.test(appYaml)) throw new Error(`app.yaml has no plain value for ${name} to set.`);
+  appYaml = appYaml.replace(line, (_, head) => `${head}"${value}"\n`);
+}
 writeFileSync(path.join(out, 'app.yaml'), appYaml);
 
 console.log(`staged ${path.relative(root, out)}/ for databricks bundle deploy`);

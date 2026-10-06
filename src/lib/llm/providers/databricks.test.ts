@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { baseKey, CLAUDE_MAX_TOKENS, CLAUDE_RETRY_MAX_TOKENS, clearDatabricksTokenCache, clearTruncations, databricks, databricksToken, flattenContent, normaliseHost, readableErrors, rewriteBody, sharedPrefix } from './databricks';
+import { baseKey, baseUrlFor, isModelService, CLAUDE_MAX_TOKENS, CLAUDE_RETRY_MAX_TOKENS, clearDatabricksTokenCache, clearTruncations, databricks, databricksToken, flattenContent, normaliseHost, readableErrors, rewriteBody, sharedPrefix } from './databricks';
 
 /**
  * DATABRICKS MODEL SERVING, proved without a workspace.
@@ -23,7 +23,7 @@ describe('what Databricks needs before it can be tried', () => {
   it('names the missing field', () => {
     expect(databricks.problem({})).toMatch(/workspace/i);
     expect(databricks.problem({ host: 'http://x.cloud.databricks.com' })).toMatch(/https/i);
-    expect(databricks.problem({ host: sp.host })).toMatch(/endpoint/i);
+    expect(databricks.problem({ host: sp.host })).toMatch(/model/i);
     expect(databricks.problem({ host: sp.host, model: sp.model })).toMatch(/client ID/i);
     expect(databricks.problem({ host: sp.host, model: sp.model, clientId: 'id' })).toMatch(/secret/i);
     expect(databricks.problem(sp)).toBeNull();
@@ -42,6 +42,21 @@ describe('which workspace', () => {
     expect(normaliseHost('https://fevm-x.cloud.databricks.com/')).toBe('https://fevm-x.cloud.databricks.com');
     expect(normaliseHost('https://fevm-x.cloud.databricks.com/?o=7474654706714892')).toBe('https://fevm-x.cloud.databricks.com');
     expect(normaliseHost('')).toBeNull();
+  });
+
+  it('calls Unity Gateway for a model service, and the serving endpoints for an endpoint name', () => {
+    const gateway = databricks.client({ ...sp, model: 'system.ai.claude-sonnet-5' });
+    expect(gateway.baseURL).toBe('https://fevm-x.cloud.databricks.com/ai-gateway/mlflow/v1');
+    expect(baseUrlFor('https://h', 'my_catalog.models.policy-chat')).toBe('https://h/ai-gateway/mlflow/v1');
+    expect(baseUrlFor('https://h', 'databricks-claude-sonnet-5')).toBe('https://h/serving-endpoints');
+    expect(isModelService('system.ai')).toBe(false);
+  });
+
+  it('treats a Unity Gateway Claude as Claude: no JSON mode, the larger budget', () => {
+    expect(rewriteBody({ model: 'system.ai.claude-sonnet-5', response_format: { type: 'json_object' }, max_tokens: 25_000 }, { dropEffort: false, dropFormat: false }))
+      .toEqual({ model: 'system.ai.claude-sonnet-5', max_tokens: CLAUDE_MAX_TOKENS });
+    expect(rewriteBody({ model: 'system.ai.gpt-5-5', reasoning: { effort: 'low' } }, { dropEffort: false, dropFormat: false }))
+      .toEqual({ model: 'system.ai.gpt-5-5', reasoning_effort: 'low' });
   });
 
   it('calls the serving endpoints under that workspace, by endpoint name', () => {
