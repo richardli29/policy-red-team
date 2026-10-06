@@ -40,7 +40,7 @@ describe('which workspace', () => {
     // Databricks Apps injects the first; a browser tab gives the last.
     expect(normaliseHost('fevm-x.cloud.databricks.com')).toBe('https://fevm-x.cloud.databricks.com');
     expect(normaliseHost('https://fevm-x.cloud.databricks.com/')).toBe('https://fevm-x.cloud.databricks.com');
-    expect(normaliseHost('https://fevm-x.cloud.databricks.com/?o=7474654706714892')).toBe('https://fevm-x.cloud.databricks.com');
+    expect(normaliseHost('https://fevm-x.cloud.databricks.com/?o=1234567890123456')).toBe('https://fevm-x.cloud.databricks.com');
     expect(normaliseHost('')).toBeNull();
   });
 
