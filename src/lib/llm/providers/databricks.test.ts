@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { baseKey, baseUrlFor, isModelService, CLAUDE_MAX_TOKENS, CLAUDE_RETRY_MAX_TOKENS, clearDatabricksTokenCache, clearTruncations, databricks, databricksToken, flattenContent, normaliseHost, readableErrors, rewriteBody, sharedPrefix } from './databricks';
+import { baseKey, isPolicyHiccup, baseUrlFor, isModelService, CLAUDE_MAX_TOKENS, CLAUDE_RETRY_MAX_TOKENS, clearDatabricksTokenCache, clearTruncations, databricks, databricksToken, flattenContent, normaliseHost, readableErrors, rewriteBody, sharedPrefix } from './databricks';
 
 /**
  * DATABRICKS MODEL SERVING, proved without a workspace.
@@ -295,5 +295,31 @@ describe('prompt caching, as an experiment', () => {
     expect(parts[0].cache_control).toEqual({ type: 'ephemeral' });
     expect(parts[1].text).toBe('two');
     expect(sharedPrefix(long + 'one', long + 'two')).toBe(long.length);
+  });
+});
+
+describe('a Unity Gateway policy that failed to run', () => {
+  it('is tried again, and a refusal is not', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const fail = (status: number, message: string) => Object.assign(new Error(message), { status });
+    expect(isPolicyHiccup(fail(504, "504 Input policy 'claude-sonnet-5-unsafe-content' failed to evaluate: ResponseTimeoutException"))).toBe(true);
+    expect(isPolicyHiccup(fail(500, "500 Output policy 'x' failed to evaluate"))).toBe(true);
+    expect(isPolicyHiccup(fail(400, 'blocked by policy'))).toBe(false);
+    expect(isPolicyHiccup(fail(503, 'unavailable'))).toBe(false);
+
+    let calls = 0;
+    const proto = Object.getPrototypeOf(databricks.client({ ...sp, authMode: 'token', token: 'dapi1' }).chat.completions);
+    vi.spyOn(proto, 'create').mockImplementation(async () => {
+      calls += 1;
+      if (calls < 3) throw fail(504, "504 Input policy 'p' failed to evaluate");
+      return { choices: [{ message: { content: 'ok' } }] };
+    });
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    const adapted = databricks.client({ ...sp, authMode: 'token', token: 'dapi1' });
+    const reply = adapted.chat.completions.create({ model: 'system.ai.claude-sonnet-5', messages: [] } as never);
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(((await reply) as unknown as { choices: { message: { content: string } }[] }).choices[0].message.content).toBe('ok');
+    expect(calls).toBe(3);
+    vi.useRealTimers();
   });
 });

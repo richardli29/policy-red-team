@@ -343,6 +343,22 @@ const REASONING_FAMILIES = /(^|[-/.])(gpt-5|gpt-oss|o\d)/i;
 const NO_JSON_MODE = /(^|[-/.])claude/i;
 const CLAUDE = NO_JSON_MODE;
 export const CLAUDE_MAX_TOKENS = 48_000;
+
+/**
+ * A UNITY GATEWAY SERVICE POLICY THAT FAILED TO RUN is not an answer about the
+ * request. On 2026-10-06 a workspace's content-safety policy on
+ * system.ai.claude-sonnet-5 timed out on 2 calls in 5 ("Input policy ...
+ * failed to evaluate", 504; "Output policy ...", 500), and passed the same
+ * request on the next try. A run makes hundreds of calls, so these are tried
+ * again, a few times. A policy that REFUSES is a 4xx and is never retried.
+ */
+const POLICY_RETRIES = 3;
+const POLICY_RETRY_DELAY_MS = 2_000;
+export function isPolicyHiccup(err: unknown): boolean {
+  const status = (err as { status?: number })?.status ?? 0;
+  const message = err instanceof Error ? err.message : '';
+  return status >= 500 && /policy '[^']*' failed to evaluate|POLICY_EVALUATION_FAILED/i.test(message);
+}
 /** ~580 seconds at the ~110 tokens a second measured on the first real runs. */
 export const CLAUDE_RETRY_MAX_TOKENS = 64_000;
 /** A shared prefix shorter than this is not worth a cache write. */
@@ -548,6 +564,7 @@ function adaptParameters(client: OpenAI): OpenAI {
     }
 
     const wantsJson = (raw.response_format as { type?: string } | undefined)?.type === 'json_object';
+    let policyRetries = 0;
     for (;;) {
       const sent = rewriteBody(raw, learned, extra);
       const startedAt = Date.now();
@@ -558,6 +575,11 @@ function adaptParameters(client: OpenAI): OpenAI {
         return result;
       } catch (err) {
         logCall(model, startedAt, null, err);
+        if (isPolicyHiccup(err) && policyRetries < POLICY_RETRIES && !options?.signal?.aborted) {
+          policyRetries += 1;
+          await new Promise((resolve) => setTimeout(resolve, POLICY_RETRY_DELAY_MS * policyRetries));
+          continue;
+        }
         if ((err as { status?: number })?.status !== 400) throw err;
         const message = err instanceof Error ? err.message : '';
         const bare = !message || /no body/i.test(message);

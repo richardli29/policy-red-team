@@ -230,7 +230,7 @@ estimate for the whole run. A real policy paper costs more.
 | The app shows CRASHED after a restart | Check `databricks apps logs` for the cause. A transient Lakebase credential timeout used to crash it; the pool now logs and retries those. `databricks bundle run policy_red_team` starts it again |
 | Stage calls fail with "the model returned malformed JSON" | The model is replying in a shape the provider does not yet handle. Try a different family in `model` and report which one it was |
 | Model calls fail with `PERMISSION_DENIED` or `does not exist` | The app's service principal lacks `EXECUTE` on the model service, or the model is not offered in this region. Check with the `ai-gateway` command in [Before you start](#before-you-start) |
-| A call fails naming a policy, such as `POLICY_EVALUATION_FAILED` | A Unity Gateway service policy (a guardrail) on the model refused or timed out. Seen once on 2026-10-06 as a timeout that cleared on retry. The workspace admin owns these |
+| A call fails naming a policy, or `failed to evaluate` | A Unity Gateway service policy (a guardrail) on the model refused it, or failed to run. A policy that fails to run is retried three times by the app: on 2026-10-06 one workspace's content-safety policy timed out on about 2 calls in 5, and every call got through on a retry, at up to a minute each. If they keep failing, the workspace admin owns the policy. A refusal (a 4xx) is not retried |
 | A script or `curl` gets "This request came from another website" | That is the cross-site guard. A browser sends `Sec-Fetch-Site: same-origin` and is let through; a script has to send the same header |
 
 ## How it differs from running it locally
