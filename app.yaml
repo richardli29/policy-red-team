@@ -49,8 +49,10 @@ env:
     value: "policy-red-team-admins"
   - name: POLICY_SETTINGS_KEY
     valueFrom: settings-key
-  - name: POLICY_OWNER_EMAIL
-    value: policy-red-team@app.local
+  # Each reader sees only the papers they submitted: the owner of a request is
+  # the person signed in. Unset, every reader shares one owner and sees all.
+  - name: POLICY_OWNER_SCOPE
+    value: user
 
   # ── Research ──────────────────────────────────────────────────────────────
   # `none` until outbound access to a search service is agreed. The report then

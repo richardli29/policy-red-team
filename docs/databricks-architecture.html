@@ -293,7 +293,7 @@
       <ul class="plain">
         <li><strong>Data stays in the workspace.</strong> Papers, findings and the AI calls all stay on Databricks. Nothing goes to an outside AI service.</li>
         <li><strong>No passwords or keys to manage.</strong> The app proves who it is to Databricks automatically, and admins are simply the members of one group, managed in Entra ID like any other.</li>
-        <li><strong>Access is controlled in one place.</strong> Only people granted access to the app can open it, using their existing Databricks sign-in.</li>
+        <li><strong>Access is controlled in one place.</strong> Only people granted access to the app can open it, using their existing Databricks sign-in, and each person sees only the papers they submitted.</li>
       </ul>
       <ul class="plain">
         <li><strong>The AI model can be governed.</strong> Unity Gateway can limit how much the model is used and track every call.</li>
@@ -345,7 +345,7 @@
     <h2>Before relying on it</h2>
     <ol class="steps">
       <li><strong>Assess one real paper</strong> of typical length, to confirm the cost and time.</li>
-      <li><strong>Decide who should have access.</strong> Everyone with access sees every assessment in the app.</li>
+      <li><strong>Decide who should have access.</strong> Each person sees only their own papers, so access decides who can use it, not who can read what.</li>
       <li><strong>Set the spending limits</strong>, in the app and on the AI model, before sharing it more widely.</li>
       <li><strong>Try a second AI model</strong> to compare cost and quality.</li>
       <li><strong>Hold back unpublished papers for now.</strong> The option to lock a sensitive paper's text needs somewhere permanent to keep its keys first.</li>
@@ -669,7 +669,7 @@
       <table>
         <thead><tr><th>Principal</th><th>Can</th><th>Granted by</th></tr></thead>
         <tbody>
-          <tr><td>A signed-in reader with CAN_USE</td><td>Open the App, submit papers, read and export every assessment</td><td>App permissions (only the deployer at first)</td></tr>
+          <tr><td>A signed-in reader with CAN_USE</td><td>Open the App, submit papers, and read, export and delete their own assessments only</td><td>App permissions (only the deployer at first)</td></tr>
           <tr><td>A member of the admin group</td><td>Open <code>/admin</code>: token ceiling, model menu, connection test</td><td>Group membership, in Entra ID or the workspace. No password</td></tr>
           <tr><td>The App's service principal</td><td>Call one model through Unity Gateway, connect to one Lakebase database, read one secret</td><td>Lakebase and the secret: resource grants in <code>databricks.yml</code>. The model: <code>EXECUTE</code> on the model service in Unity Catalog</td></tr>
           <tr><td>Another website</td><td>Nothing that changes state: a cross-site guard refuses any POST without <code>Sec-Fetch-Site: same-origin</code></td><td>The server itself</td></tr>

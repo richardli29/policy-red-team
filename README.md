@@ -165,7 +165,7 @@ In `app.yaml`, for how the app behaves:
 | Setting | Default | |
 |---|---|---|
 | `POLICY_SEARCH` | `none` | the research stage has no web search, and the report says every finding rests on the paper. Set `tavily` and add a `TAVILY_API_KEY` secret if outbound access to [Tavily](https://tavily.com) is agreed |
-| `POLICY_OWNER_EMAIL` | a placeholder | assessments are scoped to one owner. Everyone with access sees the same list, and the store allows three active assessments per owner, so the whole team shares three |
+| `POLICY_OWNER_SCOPE` | `user` | **each reader sees only the papers they submitted**: the list, the reports, the downloads and the persona library are all their own, and so is the limit of three active assessments. Remove it and every reader shares one owner (`POLICY_OWNER_EMAIL`) and sees everything |
 | `POLICY_WORKERS` | `2` | how many documents can be assessed at once, 1 to 6 |
 | `POLICY_DATABRICKS_PROMPT_CACHE` | `0` | `1` turns on Claude prompt caching, as an experiment. See [What it costs](#what-it-costs) |
 
@@ -226,7 +226,8 @@ estimate for the whole run. A real policy paper costs more.
 | A stage fails with "the model's reply was cut off at its output limit" | The call used its whole output allowance. For Claude that is 48,000 tokens, and a request that was cut off once is given 64,000 on its next attempt (`src/lib/llm/providers/databricks.ts`). If it still fails, the paper needs a model with a larger output limit for that stage |
 | A call error reads "400 status code (no body)" | It should not any more: the provider reshapes Databricks' error body so the endpoint's own message is recorded. If you see it, the endpoint sent a body in a shape nobody has seen yet |
 | You want to see what a run is doing | `databricks apps logs policy-red-team --follow` shows one `serving:` line per model call: seconds, tokens in and out, cached, and how the reply finished |
-| Submitting says "Three analyses are already active" | The store's limit per owner. Every reader on the app is the same owner, so cancel or wait for one of the three |
+| Submitting says "Three analyses are already active" | The limit is three running at once per reader. Cancel one of yours or wait for it to finish |
+| Assessments from before 7 October 2026 have gone from the list | They belong to the old shared owner, `policy-red-team@app.local`. They are still in Lakebase; reassign them by updating `owner` in `policy_red_team.policy_analyses` |
 | The app shows CRASHED after a restart | Check `databricks apps logs` for the cause. A transient Lakebase credential timeout used to crash it; the pool now logs and retries those. `databricks bundle run policy_red_team` starts it again |
 | Stage calls fail with "the model returned malformed JSON" | The model is replying in a shape the provider does not yet handle. Try a different family in `model` and report which one it was |
 | Model calls fail with `PERMISSION_DENIED` or `does not exist` | The app's service principal lacks `EXECUTE` on the model service, or the model is not offered in this region. Check with the `ai-gateway` command in [Before you start](#before-you-start) |

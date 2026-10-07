@@ -14,7 +14,7 @@
  */
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { HttpError, readJson, readMultipart, sendJson } from './http';
-import { getOwnerEmails } from '$lib/server/access';
+import { requestOwner } from './owner';
 import { isReadOnly, READ_ONLY_MESSAGE } from '$lib/server/read-only';
 import { rateLimit } from '$lib/server/rate-limit';
 
@@ -52,7 +52,6 @@ import { shareableReport } from '$lib/policy-analysis/share';
 import { STAGES } from '$lib/policy-analysis/contracts';
 import { analysisStatus } from '$lib/worker';
 
-const owner = () => getOwnerEmails()[0];
 
 /**
  * The copied export layer returns a web `Response`; this server speaks
@@ -127,6 +126,11 @@ export async function handleApi(
 ): Promise<boolean> {
   const segments = url.pathname.replace(/^\/api\/policy-analysis\/?/, '').split('/').filter(Boolean);
   const method = req.method ?? 'GET';
+
+  // WHOSE PAPERS. Resolved once, before any route, so every store call below is
+  // scoped to the person signed in when `POLICY_OWNER_SCOPE=user`. See `owner.ts`.
+  const signedIn = requestOwner(req);
+  const owner = () => signedIn;
 
   // One gate for every mutation, rather than a check per handler. A route added
   // later is covered without anyone remembering to cover it — which is the only

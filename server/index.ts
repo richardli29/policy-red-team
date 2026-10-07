@@ -29,6 +29,8 @@ import { handleApi, toHttpError } from './api';
 import { crossSiteProblem } from '$lib/server/request-guard';
 import { handleReader, readerDenied } from './reader-gate';
 import { handleAdmin } from './admin';
+import { requestOwner } from './owner';
+import { ownedAnalysis } from '$lib/policy-analysis/server/store';
 import { serveStatic } from './static';
 import { sendJson } from './http';
 import { client, DATA_DIR } from '$lib/db';
@@ -183,6 +185,12 @@ const server = createServer(async (req, res) => {
     // would try to end the response.
     if (url.pathname.startsWith('/api/policy-analysis/') && url.pathname.endsWith('/events')) {
       const id = url.pathname.split('/').at(-2)!;
+      // Only the owner's own runs. Every other route reaches the store through
+      // an owner; this one read the run by id alone.
+      if (!(await ownedAnalysis(requestOwner(req), id))) {
+        sendJson(res, 404, { message: 'No such assessment.' });
+        return;
+      }
       res.writeHead(200, {
         'content-type': 'text/event-stream',
         'cache-control': 'no-cache',
