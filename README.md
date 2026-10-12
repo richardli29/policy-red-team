@@ -119,6 +119,57 @@ in `databricks.yml` and repeat step 4. See
 To test it, open the app, choose **Assess a paper** and upload a PDF, DOCX or text
 file. Progress shows stage by stage.
 
+## Deploy it from the Databricks web terminal
+
+No laptop needed: the same deploy runs in the workspace's
+[web terminal](https://docs.databricks.com/aws/en/compute/web-terminal), whose CLI
+is already signed in as you. There is no `databricks auth login` and no profile.
+
+**You need:** the web terminal enabled for the workspace (it is off by default;
+a workspace admin turns it on), CAN ATTACH TO on some all-purpose compute on
+Databricks Runtime 15 or later (or serverless), and internet access from that
+compute to `nodejs.org` and the npm registry.
+
+**1. Add the repository as a Git folder.** Workspace, then Create, then Git
+folder. Use the repository URL and the `databricks-apps` branch.
+
+**2. Open a terminal.** Open any notebook, attach it to the compute, and click
+the terminal icon in the right-hand sidebar.
+
+**3. Copy the code to the compute's own disk.** Installing the build tools inside
+the Git folder would put thousands of small files in the workspace and be very
+slow:
+
+```bash
+cp -r "/Workspace/Users/$(databricks current-user me -o json | python3 -c 'import json,sys; print(json.load(sys.stdin)["userName"])')/policy-red-team" ~/prt
+cd ~/prt
+```
+
+If you named the Git folder something else, change `policy-red-team` above.
+
+**4. Install Node.js** for this session:
+
+```bash
+NODE=v22.23.2; ARCH=$(uname -m | sed 's/x86_64/x64/; s/aarch64/arm64/')
+curl -fsSL "https://nodejs.org/dist/$NODE/node-$NODE-linux-$ARCH.tar.xz" | tar -xJ -C ~
+export PATH="$HOME/node-$NODE-linux-$ARCH/bin:$PATH"
+node --version
+```
+
+**5. Deploy:**
+
+```bash
+npm run deploy
+```
+
+Settings go in front as before, for example
+`BUNDLE_VAR_admin_group="Policy Red Team Admins" npm run deploy`. Another target
+is `npm run deploy -- - <target>`. Then carry on from [step 6](#deploy-it-step-by-step).
+
+The compute's disk does not outlast the compute, so after it restarts, repeat
+steps 3 to 5 (with `git pull` in the Git folder first, for new code). A
+terminal session ends after twelve hours at most.
+
 ## After a code change
 
 `npm run deploy -- <profile>` again, or steps 4 and 5 by hand:
