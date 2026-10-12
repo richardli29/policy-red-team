@@ -32,7 +32,14 @@ bundle() { databricks bundle "$@" -t "$target" $auth; }
 
 # The build runs on this machine, so the tools have to be here.
 node -e 'const [a,b]=process.versions.node.split(".").map(Number); if (a<22) { console.error(`Node ${process.versions.node} is too old: 22 or newer is needed to build.`); process.exit(1) }'
-[ -d node_modules ] || npm ci
+# `npm ci` writes node_modules/.package-lock.json last, so its absence means
+# the tools were never installed or an install was stopped part-way.
+[ -f node_modules/.package-lock.json ] || { rm -rf node_modules; npm ci; }
+
+# THE BUNDLE CHECKS THAT `.app/` EXISTS before it runs anything, `init_secrets`
+# included, but only `bundle deploy` builds it. On a fresh copy it is not there
+# yet. An empty folder satisfies the check; the deploy fills it.
+mkdir -p .app
 
 echo "==> secrets"
 bundle run init_secrets
