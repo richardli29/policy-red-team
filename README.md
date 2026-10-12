@@ -25,19 +25,20 @@ It is deployed with a [bundle](https://docs.databricks.com/aws/en/dev-tools/bund
 
 ## Quick start
 
-Two lines, once you have the CLI and Node 22 (see [Before you start](#before-you-start)):
+Two ways to deploy. Both run the same one command, `npm run deploy`.
 
-```bash
-databricks auth login --host https://<your-workspace>.cloud.databricks.com --profile <profile>
-npm run deploy -- <profile>
-```
+- **From the Databricks web terminal**, with the code in a Git folder. Nothing to
+  install on a laptop. See [Deploy from the Databricks web terminal](#deploy-from-the-databricks-web-terminal).
+- **From a laptop**, with the Databricks CLI and Node.js installed:
 
-`npm run deploy` does steps 2 to 5 below in one go and prints the app's URL. Run
-the same command again to deploy a code change. The first time, finish with
-[steps 6 to 8](#deploy-it-step-by-step): put the admins in the admin group, set
-a token ceiling in `/admin`, and share the app.
+  ```bash
+  databricks auth login --host https://<your-workspace>.cloud.databricks.com --profile <profile>
+  npm run deploy -- <profile>
+  ```
 
-## Before you start
+  See [Deploy it, step by step](#deploy-it-step-by-step-from-a-laptop).
+
+## Before you start (from a laptop)
 
 You need:
 
@@ -54,7 +55,7 @@ You need:
   declare this as a bundle resource yet.
 - **Permission to create** an app, a Lakebase project and a secret scope.
 
-## Deploy it, step by step
+## Deploy it, step by step (from a laptop)
 
 The bundle deploys to whichever workspace your CLI profile points at. Nothing in
 the repository names a workspace.
@@ -119,58 +120,178 @@ in `databricks.yml` and repeat step 4. See
 To test it, open the app, choose **Assess a paper** and upload a PDF, DOCX or text
 file. Progress shows stage by stage.
 
-## Deploy it from the Databricks web terminal
+## Deploy from the Databricks web terminal
 
-No laptop needed: the same deploy runs in the workspace's
-[web terminal](https://docs.databricks.com/aws/en/compute/web-terminal), whose CLI
-is already signed in as you. There is no `databricks auth login` and no profile.
+Everything happens inside Databricks: the code is in a Git folder, and the
+[web terminal](https://docs.databricks.com/aws/en/compute/web-terminal) runs the
+deploy. Its Databricks CLI is already signed in as you, so there is no login step
+and no profile name.
 
-**You need:** the web terminal enabled for the workspace (it is off by default;
-a workspace admin turns it on), CAN ATTACH TO on some all-purpose compute on
-Databricks Runtime 15 or later (or serverless), and internet access from that
-compute to `nodejs.org` and the npm registry.
+In the commands below, replace `<your-email>` with your workspace user name and
+`policy-red-team` with your Git folder's name if it is different. For example, a
+Git folder at `/Workspace/Users/jo.bloggs@example.gov.uk/policy-red-team` is
+`<your-email>` = `jo.bloggs@example.gov.uk`. The Git folder's **⋮** menu has
+**Copy path** if you are unsure.
 
-**1. Add the repository as a Git folder.** Workspace, then Create, then Git
-folder. Use the repository URL and the `databricks-apps` branch.
+### What you need first
 
-**2. Open a terminal.** Open any notebook, attach it to the compute, and click
-the terminal icon in the right-hand sidebar.
+Ask a workspace admin for these:
 
-**3. Copy the code to the compute's own disk.** Installing the build tools inside
-the Git folder would put thousands of small files in the workspace and be very
-slow:
+- [ ] Databricks Apps and Lakebase are available in the workspace.
+- [ ] The web terminal is turned on (it is off by default).
+- [ ] You can attach to some compute: an all-purpose cluster on Databricks
+      Runtime 15 or later, or serverless.
+- [ ] That compute can reach `nodejs.org` and `registry.npmjs.org`, to download
+      Node.js and the build tools.
+- [ ] You can create an app, a Lakebase database and a secret scope.
+- [ ] A group called `policy-red-team-admins` exists, with the app's admins in
+      it directly. With users from Entra ID, create it in Entra and include it in
+      the SCIM sync.
+
+### First deployment
+
+**1. Get the latest code.** Open the Git folder, check the branch at the top is
+`databricks-apps`, and click **Pull**.
+
+**2. Open the web terminal.** Open any notebook (or create one with
+**Create → Notebook**), attach it to your compute, and click the terminal icon in
+the right-hand sidebar.
+
+**3. Copy the code onto the compute.** Installing the build tools inside the Git
+folder would be very slow, so the deploy runs from a copy:
 
 ```bash
-cp -r "/Workspace/Users/$(databricks current-user me -o json | python3 -c 'import json,sys; print(json.load(sys.stdin)["userName"])')/policy-red-team" ~/prt
+rm -rf ~/prt
+cp -r "/Workspace/Users/<your-email>/policy-red-team" ~/prt
 cd ~/prt
+ls databricks.yml
 ```
 
-If you named the Git folder something else, change `policy-red-team` above.
+The last line should print `databricks.yml`.
 
 **4. Install Node.js** for this session:
 
 ```bash
-NODE=v22.23.2; ARCH=$(uname -m | sed 's/x86_64/x64/; s/aarch64/arm64/')
+NODE=v22.23.2
+ARCH=$(uname -m | sed 's/x86_64/x64/; s/aarch64/arm64/')
 curl -fsSL "https://nodejs.org/dist/$NODE/node-$NODE-linux-$ARCH.tar.xz" | tar -xJ -C ~
 export PATH="$HOME/node-$NODE-linux-$ARCH/bin:$PATH"
 node --version
 ```
 
-**5. Deploy:**
+It should print `v22.23.2`.
+
+**5. Check you are signed in as yourself:**
+
+```bash
+databricks current-user me -o json | python3 -c 'import json,sys; print(json.load(sys.stdin)["userName"])'
+```
+
+**6. Check the AI model answers:**
+
+```bash
+databricks api post /ai-gateway/mlflow/v1/chat/completions --json '{"model":"system.ai.claude-sonnet-5","messages":[{"role":"user","content":"ok?"}],"max_tokens":5}'
+```
+
+A reply means carry on. An error is explained in
+[If something goes wrong](#if-something-goes-wrong-in-the-web-terminal).
+
+**7. Check the admin group exists:**
+
+```bash
+databricks groups list --filter 'displayName eq "policy-red-team-admins"' -o json
+```
+
+`[]` means it does not exist yet: ask an admin to create it. If yours has another
+name, use it in the next step.
+
+**8. Deploy:**
+
+```bash
+cd ~/prt
+npm run deploy
+```
+
+Or, with an admin group or model of a different name:
+
+```bash
+cd ~/prt
+BUNDLE_VAR_admin_group="<your group name>" BUNDLE_VAR_model="system.ai.claude-sonnet-5" npm run deploy
+```
+
+The first time takes about five minutes. It creates the secret scope, the
+Lakebase database and the app, and finishes with `Deployed: https://...`, the
+app's address.
+
+**9. Check the app is running:**
+
+```bash
+databricks apps get policy-red-team -o json | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["url"], d["app_status"]["state"])'
+```
+
+It should print the address and `RUNNING`.
+
+**10. Finish in the browser:**
+
+1. Open `<app address>/admin` as a member of the admin group. There is no
+   password. Set a **token ceiling**, so no assessment can spend without limit.
+2. Go to **Compute → Apps → policy-red-team → Permissions** and give a group of
+   users **CAN_USE**. Each person sees only the papers they submit.
+3. Open the app, choose **Assess a paper**, upload a short document and start it.
+   A short paper takes one to two hours.
+
+### Future deployments
+
+When there is new code:
+
+**1.** In the Git folder, click **Pull**.
+
+**2.** Open the web terminal (as in step 2 above) and run:
+
+```bash
+rm -rf ~/prt
+cp -r "/Workspace/Users/<your-email>/policy-red-team" ~/prt
+cd ~/prt
+```
+
+**3.** If `node --version` does not print `v22.23.2`, install Node.js again with
+step 4 above. The compute's disk is wiped when it restarts, and a terminal session
+ends after twelve hours at most.
+
+**4.** Deploy, with the same settings as the first time:
 
 ```bash
 npm run deploy
 ```
 
-Settings go in front as before, for example
-`BUNDLE_VAR_admin_group="Policy Red Team Admins" npm run deploy`. Another target
-is `npm run deploy -- - <target>`. Then carry on from [step 6](#deploy-it-step-by-step).
+Nothing else changes: the secrets, the database, the assessments, the admin
+group and the permissions all stay as they were. Avoid deploying during an
+assessment that matters. The app restarts, and the run carries on afterwards,
+but the model call it was making is lost and still billed.
 
-The compute's disk does not outlast the compute, so after it restarts, repeat
-steps 3 to 5 (with `git pull` in the Git folder first, for new code). A
-terminal session ends after twelve hours at most.
+### Watching it
 
-## After a code change
+```bash
+databricks apps logs policy-red-team --follow
+```
+
+`Ctrl+C` stops watching.
+
+### If something goes wrong in the web terminal
+
+| What you see | What to do |
+|---|---|
+| `cp` says "No such file or directory" | The Git folder's path is different. Use **⋮ → Copy path** on the Git folder |
+| `curl` or `npm` cannot connect | The compute has no internet access. Ask the admin to allow `nodejs.org` and `registry.npmjs.org` |
+| The model check says "does not exist" | The model is not available here, or has another name. Ask the admin, and set `BUNDLE_VAR_model` |
+| The model check says `PERMISSION_DENIED` | A Unity Catalog admin needs to grant `EXECUTE` on the model |
+| Calls fail with "policy ... failed to evaluate" | A guardrail on the model is struggling with the app's large requests. Ask the admin to raise its rate limit |
+| The deploy fails at Lakebase or `postgres` | Lakebase may not be available in this region. Ask the admin |
+| `/admin` says only members of the group can open it | Add yourself to the group directly, then wait a few minutes |
+| `/admin` stays closed for everyone | Ask the admin to allow user authorisation for Databricks Apps |
+| "Three analyses are already active" | Each person can run three at once. Cancel one or wait |
+
+## After a code change (from a laptop)
 
 `npm run deploy -- <profile>` again, or steps 4 and 5 by hand:
 
@@ -281,7 +402,7 @@ estimate for the whole run. A real policy paper costs more.
 | Assessments from before 7 October 2026 have gone from the list | They belong to the old shared owner, `policy-red-team@app.local`. They are still in Lakebase; reassign them by updating `owner` in `policy_red_team.policy_analyses` |
 | The app shows CRASHED after a restart | Check `databricks apps logs` for the cause. A transient Lakebase credential timeout used to crash it; the pool now logs and retries those. `databricks bundle run policy_red_team` starts it again |
 | Stage calls fail with "the model returned malformed JSON" | The model is replying in a shape the provider does not yet handle. Try a different family in `model` and report which one it was |
-| Model calls fail with `PERMISSION_DENIED` or `does not exist` | The app's service principal lacks `EXECUTE` on the model service, or the model is not offered in this region. Check with the `ai-gateway` command in [Before you start](#before-you-start) |
+| Model calls fail with `PERMISSION_DENIED` or `does not exist` | The app's service principal lacks `EXECUTE` on the model service, or the model is not offered in this region. Check with the `ai-gateway` command in [Before you start](#before-you-start-from-a-laptop) |
 | A call fails naming a policy, or `failed to evaluate` | A Unity Gateway service policy (a guardrail) on the model refused it, or failed to run. A policy that fails to run is retried three times by the app: on 2026-10-06 one workspace's content-safety policy timed out on about 2 calls in 5, and every call got through on a retry, at up to a minute each. If they keep failing, the workspace admin owns the policy. A refusal (a 4xx) is not retried |
 | A script or `curl` gets "This request came from another website" | That is the cross-site guard. A browser sends `Sec-Fetch-Site: same-origin` and is let through; a script has to send the same header |
 
