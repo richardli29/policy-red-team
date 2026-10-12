@@ -38,88 +38,6 @@ Two ways to deploy. Both run the same one command, `npm run deploy`.
 
   See [Deploy it, step by step](#deploy-it-step-by-step-from-a-laptop).
 
-## Before you start (from a laptop)
-
-You need:
-
-- **The Databricks CLI**, v1.17 or newer. [Install it](https://docs.databricks.com/aws/en/dev-tools/cli/install).
-- **Node 22.23.2 or newer** on your machine (`node --version`). The app is built
-  here, not on the platform.
-- **In the workspace:** Databricks Apps, Lakebase, and Unity Gateway with the
-  model you want. Check the model answers with
-  `databricks api post /ai-gateway/mlflow/v1/chat/completions -p <profile> --json '{"model":"system.ai.claude-sonnet-5","messages":[{"role":"user","content":"ok?"}],"max_tokens":5}'`.
-- **The app's service principal needs `EXECUTE` on the model service.** For a
-  `system.ai` model, `account users` usually has it already, which covers the
-  app. If not, a Unity Catalog admin grants it after the first deploy (the
-  principal's ID is in `databricks apps get policy-red-team`). An app cannot
-  declare this as a bundle resource yet.
-- **Permission to create** an app, a Lakebase project and a secret scope.
-
-## Deploy it, step by step (from a laptop)
-
-The bundle deploys to whichever workspace your CLI profile points at. Nothing in
-the repository names a workspace.
-
-**1. Log in to the workspace** and give the login a name (the profile):
-
-```bash
-databricks auth login --host https://<your-workspace>.cloud.databricks.com --profile <profile>
-```
-
-**2. Install the build tools**, once:
-
-```bash
-npm ci
-```
-
-**3. Create the secret**, once per workspace. This makes the secret scope and
-generates the settings key. Running it again changes nothing:
-
-```bash
-databricks bundle run init_secrets -t dev -p <profile>
-```
-
-**4. Deploy.** This builds the app, uploads it, and creates the Lakebase database
-and the app. The first time takes a few minutes:
-
-```bash
-databricks bundle deploy -t dev -p <profile>
-```
-
-**5. Start it.** This puts the code live and prints the app's URL:
-
-```bash
-databricks bundle run policy_red_team -t dev -p <profile>
-```
-
-**6. Choose the admins.** Admins are the members of one workspace group,
-`policy-red-team-admins` by default. Create it and add the admins directly:
-
-- **Users synced from Entra ID (SCIM):** create the group in Entra, add the
-  admins, and include it in the Databricks provisioning app. It appears in the
-  workspace on the next sync.
-- **Otherwise:** create it in the workspace's admin settings, under Identity
-  and access, then Groups.
-
-To use a group with another name, set it when deploying:
-`databricks bundle deploy -t dev -p <profile> --var admin_group="<group name>"`,
-or as `admin_group` in the target. Membership is direct: put people in the
-group itself, not in a group inside it. Changes take effect within a few minutes,
-with no redeploy.
-
-**7. Set a spending limit.** As an admin, open `<app URL>/admin` and set a token
-ceiling before anyone runs anything. There is no password: the workspace
-sign-in already says who you are. Without a ceiling a run keeps spending. See
-[What it costs](#what-it-costs).
-
-**8. Share it.** At first only you can open it. Give `CAN_USE` on the app to a
-group (again, an Entra group works) in the Apps UI, or uncomment `permissions`
-in `databricks.yml` and repeat step 4. See
-[app permissions](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/permissions).
-
-To test it, open the app, choose **Assess a paper** and upload a PDF, DOCX or text
-file. Progress shows stage by stage.
-
 ## Deploy from the Databricks web terminal
 
 Everything happens inside Databricks: the code is in a Git folder, and the
@@ -290,6 +208,88 @@ databricks apps logs policy-red-team --follow
 | `/admin` says only members of the group can open it | Add yourself to the group directly, then wait a few minutes |
 | `/admin` stays closed for everyone | Ask the admin to allow user authorisation for Databricks Apps |
 | "Three analyses are already active" | Each person can run three at once. Cancel one or wait |
+
+## Before you start (from a laptop)
+
+You need:
+
+- **The Databricks CLI**, v1.17 or newer. [Install it](https://docs.databricks.com/aws/en/dev-tools/cli/install).
+- **Node 22.23.2 or newer** on your machine (`node --version`). The app is built
+  here, not on the platform.
+- **In the workspace:** Databricks Apps, Lakebase, and Unity Gateway with the
+  model you want. Check the model answers with
+  `databricks api post /ai-gateway/mlflow/v1/chat/completions -p <profile> --json '{"model":"system.ai.claude-sonnet-5","messages":[{"role":"user","content":"ok?"}],"max_tokens":5}'`.
+- **The app's service principal needs `EXECUTE` on the model service.** For a
+  `system.ai` model, `account users` usually has it already, which covers the
+  app. If not, a Unity Catalog admin grants it after the first deploy (the
+  principal's ID is in `databricks apps get policy-red-team`). An app cannot
+  declare this as a bundle resource yet.
+- **Permission to create** an app, a Lakebase project and a secret scope.
+
+## Deploy it, step by step (from a laptop)
+
+The bundle deploys to whichever workspace your CLI profile points at. Nothing in
+the repository names a workspace.
+
+**1. Log in to the workspace** and give the login a name (the profile):
+
+```bash
+databricks auth login --host https://<your-workspace>.cloud.databricks.com --profile <profile>
+```
+
+**2. Install the build tools**, once:
+
+```bash
+npm ci
+```
+
+**3. Create the secret**, once per workspace. This makes the secret scope and
+generates the settings key. Running it again changes nothing:
+
+```bash
+databricks bundle run init_secrets -t dev -p <profile>
+```
+
+**4. Deploy.** This builds the app, uploads it, and creates the Lakebase database
+and the app. The first time takes a few minutes:
+
+```bash
+databricks bundle deploy -t dev -p <profile>
+```
+
+**5. Start it.** This puts the code live and prints the app's URL:
+
+```bash
+databricks bundle run policy_red_team -t dev -p <profile>
+```
+
+**6. Choose the admins.** Admins are the members of one workspace group,
+`policy-red-team-admins` by default. Create it and add the admins directly:
+
+- **Users synced from Entra ID (SCIM):** create the group in Entra, add the
+  admins, and include it in the Databricks provisioning app. It appears in the
+  workspace on the next sync.
+- **Otherwise:** create it in the workspace's admin settings, under Identity
+  and access, then Groups.
+
+To use a group with another name, set it when deploying:
+`databricks bundle deploy -t dev -p <profile> --var admin_group="<group name>"`,
+or as `admin_group` in the target. Membership is direct: put people in the
+group itself, not in a group inside it. Changes take effect within a few minutes,
+with no redeploy.
+
+**7. Set a spending limit.** As an admin, open `<app URL>/admin` and set a token
+ceiling before anyone runs anything. There is no password: the workspace
+sign-in already says who you are. Without a ceiling a run keeps spending. See
+[What it costs](#what-it-costs).
+
+**8. Share it.** At first only you can open it. Give `CAN_USE` on the app to a
+group (again, an Entra group works) in the Apps UI, or uncomment `permissions`
+in `databricks.yml` and repeat step 4. See
+[app permissions](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/permissions).
+
+To test it, open the app, choose **Assess a paper** and upload a PDF, DOCX or text
+file. Progress shows stage by stage.
 
 ## After a code change (from a laptop)
 
